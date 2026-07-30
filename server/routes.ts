@@ -1382,6 +1382,21 @@ export async function registerRoutes(
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
+      // PRD-019: Idempotency check — don't create duplicate Stripe accounts
+      const profile = storage.getProfile(req.userId!);
+      if (profile?.stripeConnectAccountId) {
+        // Account already exists — return existing onboarding link
+        const onboardingLink = await createAccountLink(
+          profile.stripeConnectAccountId,
+          `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments`,
+          `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments`
+        );
+        return res.json({
+          stripeAccountId: profile.stripeConnectAccountId,
+          onboardingLink,
+          onboardingComplete: profile.subscriptionStatus === "active",
+        });
+      }
       const stripeAccountId = await createStripeConnectAccount(req.userId!, user.email);
       // Generate onboarding link
       const onboardingLink = await createAccountLink(

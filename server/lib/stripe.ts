@@ -152,6 +152,103 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
       break;
     }
 
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      // Handle subscription checkout completion
+      if (session.mode === "subscription" && session.subscription) {
+        const subscriptionId = typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription.id;
+        const customerId = session.customer;
+        const userId = session.metadata?.userId;
+
+        if (userId) {
+          // Create a payment record for the subscription
+          storage.createPayment({
+            userId: parseInt(userId),
+            amount: Math.round((session.amount_total || 0) / 100), // Convert cents to dollars
+            currency: session.currency || "usd",
+            status: "succeeded",
+            stripeChargeId: session.payment_intent ? (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent.id) : null,
+            stripePaymentIntentId: session.payment_intent ? (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent.id) : null,
+            stripeSubscriptionId: subscriptionId,
+            description: `Subscription: ${session.metadata?.tierName || "subscription"}`,
+          });
+
+          // Update profile subscription status
+          storage.updateProfileSubscription(parseInt(userId), {
+            stripeCustomerId: typeof customerId === "string" ? customerId : customerId?.id,
+            subscriptionStatus: "active",
+            subscriptionTier: session.metadata?.tierName || undefined,
+          });
+
+          storage.createSecurityLog({
+            userId: parseInt(userId),
+            action: "subscription_activated",
+            ipAddress: "",
+            userAgent: "",
+            details: JSON.stringify({ subscriptionId, tierName: session.metadata?.tierName }),
+          });
+        }
+      }
+      break;
+    }
+
+    case "customer.subscription.updated": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const customerId = typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id;
+
+      if (customerId) {
+        const profile = storage.getProfileByStripeCustomerId(customerId);
+        if (profile) {
+          const status = subscription.status === "active" ? "active"
+            : subscription.status === "canceled" || subscription.status === "unpaid" ? "canceled"
+            : subscription.status === "past_due" ? "past_due"
+            : "inactive";
+
+          storage.updateProfileSubscription(profile.userId, {
+            subscriptionStatus: status,
+          });
+
+          storage.createSecurityLog({
+            userId: profile.userId,
+            action: "subscription_status_changed",
+            ipAddress: "",
+            userAgent: "",
+            details: JSON.stringify({ subscriptionId: subscription.id, status: subscription.status }),
+          });
+        }
+      }
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const customerId = typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id;
+
+      if (customerId) {
+        const profile = storage.getProfileByStripeCustomerId(customerId);
+        if (profile) {
+          storage.updateProfileSubscription(profile.userId, {
+            subscriptionStatus: "canceled",
+          });
+
+          storage.createSecurityLog({
+            userId: profile.userId,
+            action: "subscription_canceled",
+            ipAddress: "",
+            userAgent: "",
+            details: JSON.stringify({ subscriptionId: subscription.id }),
+          });
+        }
+      }
+      break;
+    }
+
     default:
       // Unexpected event type, do nothing
       break;

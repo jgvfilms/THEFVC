@@ -188,6 +188,7 @@ export interface IStorage {
   }): { profiles: Profile[]; total: number };
 
   getProfileByStripeAccountId(accountId: string): Profile | undefined;
+  getProfileByStripeCustomerId(customerId: string): Profile | undefined;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -731,6 +732,11 @@ export class DatabaseStorage implements IStorage {
   // ===== PRD-019: Stripe Connect — profile lookup by account ID =====
   getProfileByStripeAccountId(accountId: string): Profile | undefined {
     return db.select().from(profiles).where(eq(profiles.stripeConnectAccountId, accountId)).get();
+  }
+
+  // ===== PRD-019: Stripe Connect — profile lookup by customer ID =====
+  getProfileByStripeCustomerId(customerId: string): Profile | undefined {
+    return db.select().from(profiles).where(eq(profiles.stripeCustomerId, customerId)).get();
   }
 }
 
