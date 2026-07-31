@@ -283,7 +283,10 @@ export function PaymentsPage() {
                       </CardHeader>
                       <CardContent>
                         <ul className="text-sm space-y-1">
-                          {JSON.parse(tier.features || "[]").map((f: string, i: number) => (
+                          {(() => {
+                            try { return JSON.parse(tier.features || "[]"); }
+                            catch { return []; }
+                          })().map((f: string, i: number) => (
                             <li key={i} className="flex items-center gap-1">
                               <span className="text-green-500">✓</span>
                               {f}
@@ -305,20 +308,20 @@ export function PaymentsPage() {
                           >
                             {checkoutMutation.isPending && checkoutMutation.variables === tier.name
                               ? "Redirecting..."
-                              : "Upgrade"}
+                              : subscription?.tier && subscription.tier !== "free"
+                                ? "Switch Plan"
+                                : "Subscribe"}
                           </Button>
                         )}
+                        {!isCurrent && tier.priceCents === 0 && (
+                          <p className="text-xs text-muted-foreground mt-3 text-center">
+                            Free tier
+                          </p>
+                        )}
                         {isCurrent && tier.priceCents > 0 && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-3 w-full"
-                            onClick={() => cancelMutation.mutate()}
-                            disabled={cancelMutation.isPending}
-                            data-testid="button-cancel-current"
-                          >
-                            Cancel Subscription
-                          </Button>
+                          <Badge className="w-full mt-3 justify-center" data-testid="badge-current-plan">
+                            Current Plan
+                          </Badge>
                         )}
                       </CardContent>
                     </Card>
