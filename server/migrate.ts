@@ -101,6 +101,7 @@ const NEW_TABLES = [
     success INTEGER DEFAULT 1,
     details TEXT DEFAULT '{}',
     created_at INTEGER NOT NULL
+   ,request_id TEXT
   )`,
   `CREATE TABLE IF NOT EXISTS analytics_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,6 +261,39 @@ export function runMigrations() {
   sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_payments_stripe_intent ON payments(stripe_payment_intent_id);`);
   sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_user ON security_audit_log(user_id);`);
   sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_action ON security_audit_log(action);`);
+
+  // PRD-022v2: Add UNIQUE constraint on subscription_tiers.name
+  sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_tiers_name ON subscription_tiers(name);`);
+
+  // Bootstrap admin
+  const auditCols = sqlite.prepare("PRAGMA table_info(security_audit_log)").all() as Array<{ name: string }>;
+  if (!auditCols.some((c) => c.name === "request_id")) {
+    sqlite.exec(`ALTER TABLE security_audit_log ADD COLUMN request_id TEXT`);
+    console.log("[migration] Added column security_audit_log.request_id");
+  }
+
+  // PRD-018v2: One-time migration — encrypt existing plaintext Stripe IDs
+  const { encryptSensitive } = require("./lib/encryption") as { encryptSensitive: (v: string) => string };
+  const profilesToEncrypt = sqlite.prepare(
+    "SELECT id, user_id, stripe_customer_id, stripe_connect_account_id FROM profiles WHERE stripe_customer_id IS NOT NULL OR stripe_connect_account_id IS NOT NULL"
+  ).all() as Array<{ id: number; user_id: number; stripe_customer_id: string | null; stripe_connect_account_id: string | null }>;
+  for (const p of profilesToEncrypt) {
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (p.stripe_customer_id && p.stripe_customer_id.startsWith("cus_")) {
+      updates.push("stripe_customer_id = ?");
+      params.push(encryptSensitive(p.stripe_customer_id));
+    }
+    if (p.stripe_connect_account_id && p.stripe_connect_account_id.startsWith("acct_")) {
+      updates.push("stripe_connect_account_id = ?");
+      params.push(encryptSensitive(p.stripe_connect_account_id));
+    }
+    if (updates.length > 0) {
+      params.push(p.id);
+      sqlite.prepare(`UPDATE profiles SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+      console.log(`[migration] Encrypted Stripe IDs for profile id=${p.id}`);
+    }
+  }
 
   // Bootstrap admin: create from env vars if missing, always set is_admin
   const adminEmail = process.env.ADMIN_EMAIL;

@@ -310,6 +310,7 @@ export const securityAuditLog = sqliteTable("security_audit_log", {
   userAgent: text("user_agent"),
   success: integer("success", { mode: "boolean" }).default(true),
   details: text("details").default("{}"), // JSON for extra context
+  requestId: text("request_id"), // PRD-018v2: Correlate with HTTP request ID
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -419,7 +420,7 @@ export type InsertNotification = typeof notifications.$inferInsert;
 // ===== SUBSCRIPTION TIERS (PRD-007: Payments & Monetization) =====
 export const subscriptionTiers = sqliteTable("subscription_tiers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(), // free | pro | pro_plus
+  name: text("name").notNull().unique(), // free | pro | pro_plus
   displayName: text("display_name").notNull(), // Free | Pro | Pro Plus
   priceCents: integer("price_cents").notNull(), // 0 | 999 | 2999
   interval: text("interval").notNull().default("month"), // month | year

@@ -7,6 +7,7 @@
 
 import Stripe from "stripe";
 import { storage } from "../storage";
+import { encryptSensitive } from "./encryption";
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "[REDACTED]", {
   apiVersion: "2023-10-16",
@@ -27,7 +28,7 @@ export async function createStripeConnectAccount(userId: number, email: string):
   });
 
   storage.updateProfileSubscription(userId, {
-    stripeConnectAccountId: account.id,
+    stripeConnectAccountId: encryptSensitive(account.id),
     subscriptionStatus: "onboarding",
   });
 
@@ -123,6 +124,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         ipAddress: "",
         userAgent: "",
         details: JSON.stringify({ payoutId: payout.id, amount: payout.amount, currency: payout.currency }),
+        requestId: null,
       });
       break;
     }
@@ -135,6 +137,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         ipAddress: "",
         userAgent: "",
         details: JSON.stringify({ payoutId: payout.id, amount: payout.amount, failureCode: payout.failure_code }),
+        requestId: null,
       });
       break;
     }
@@ -177,7 +180,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
 
           // Update profile subscription status
           storage.updateProfileSubscription(parseInt(userId), {
-            stripeCustomerId: typeof customerId === "string" ? customerId : customerId?.id,
+            stripeCustomerId: encryptSensitive(typeof customerId === "string" ? customerId : customerId?.id || ""),
             subscriptionStatus: "active",
             subscriptionTier: session.metadata?.tierName || undefined,
           });
@@ -188,6 +191,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
             ipAddress: "",
             userAgent: "",
             details: JSON.stringify({ subscriptionId, tierName: session.metadata?.tierName }),
+            requestId: null,
           });
         }
       }
@@ -218,6 +222,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
             ipAddress: "",
             userAgent: "",
             details: JSON.stringify({ subscriptionId: subscription.id, status: subscription.status }),
+            requestId: null,
           });
         }
       }
@@ -243,6 +248,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
             ipAddress: "",
             userAgent: "",
             details: JSON.stringify({ subscriptionId: subscription.id }),
+            requestId: null,
           });
         }
       }

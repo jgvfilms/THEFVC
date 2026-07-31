@@ -32,6 +32,7 @@ import type {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, and, like, or, desc, sql, gte, lt } from "drizzle-orm";
 import { sqlite } from "./migrate";
+import { decryptSensitive } from "./lib/encryption";
 
 export const db = drizzle(sqlite);
 
@@ -189,6 +190,10 @@ export interface IStorage {
 
   getProfileByStripeAccountId(accountId: string): Profile | undefined;
   getProfileByStripeCustomerId(customerId: string): Profile | undefined;
+
+  // ===== PRD-022v2: GDPR Export — Audit Logs & Analytics =====
+  getSecurityLogsByUser(userId: number, limit?: number): SecurityAuditLog[];
+  getAnalyticsByUser(userId: number, limit?: number): AnalyticsEvent[];
 }
 
 export class DatabaseStorage implements IStorage {
@@ -224,7 +229,17 @@ export class DatabaseStorage implements IStorage {
 
   // ===== PROFILES =====
   getProfile(userId: number): Profile | undefined {
-    return db.select().from(profiles).where(eq(profiles.userId, userId)).get();
+    const profile = db.select().from(profiles).where(eq(profiles.userId, userId)).get();
+    if (profile) {
+      // PRD-018v2: Decrypt Stripe IDs on read
+      if (profile.stripeCustomerId) {
+        profile.stripeCustomerId = decryptSensitive(profile.stripeCustomerId) || profile.stripeCustomerId;
+      }
+      if (profile.stripeConnectAccountId) {
+        profile.stripeConnectAccountId = decryptSensitive(profile.stripeConnectAccountId) || profile.stripeConnectAccountId;
+      }
+    }
+    return profile;
   }
 
   getProfileByHandle(handle: string): Profile | undefined {
@@ -471,6 +486,23 @@ export class DatabaseStorage implements IStorage {
     if (opts.since) conditions.push(gte(analyticsEvents.createdAt, opts.since));
     if (conditions.length > 0) query = query.where(and(...conditions));
     return query.orderBy(desc(analyticsEvents.createdAt)).limit(opts.limit || 100).all();
+  }
+
+  // ===== PRD-022v2: GDPR Export — Audit Logs & Analytics =====
+  getSecurityLogsByUser(userId: number, limit = 1000): SecurityAuditLog[] {
+    return db.select().from(securityAuditLog)
+      .where(eq(securityAuditLog.userId, userId))
+      .orderBy(desc(securityAuditLog.createdAt))
+      .limit(limit)
+      .all();
+  }
+
+  getAnalyticsByUser(userId: number, limit = 1000): AnalyticsEvent[] {
+    return db.select().from(analyticsEvents)
+      .where(eq(analyticsEvents.userId, userId))
+      .orderBy(desc(analyticsEvents.createdAt))
+      .limit(limit)
+      .all();
   }
 
   // ===== EMAIL QUEUE =====
@@ -730,13 +762,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ===== PRD-019: Stripe Connect — profile lookup by account ID =====
+  // PRD-018v2: Decrypt stored values and compare since IDs are now encrypted at rest
   getProfileByStripeAccountId(accountId: string): Profile | undefined {
-    return db.select().from(profiles).where(eq(profiles.stripeConnectAccountId, accountId)).get();
+    const allProfiles = db.select().from(profiles)
+      .where(sql`${profiles.stripeConnectAccountId} IS NOT NULL`)
+      .all();
+    return allProfiles.find((p) => {
+      const decrypted = p.stripeConnectAccountId ? (decryptSensitive(p.stripeConnectAccountId) || p.stripeConnectAccountId) : null;
+      return decrypted === accountId;
+    });
   }
 
   // ===== PRD-019: Stripe Connect — profile lookup by customer ID =====
+  // PRD-018v2: Decrypt stored values and compare since IDs are now encrypted at rest
   getProfileByStripeCustomerId(customerId: string): Profile | undefined {
-    return db.select().from(profiles).where(eq(profiles.stripeCustomerId, customerId)).get();
+    const allProfiles = db.select().from(profiles)
+      .where(sql`${profiles.stripeCustomerId} IS NOT NULL`)
+      .all();
+    return allProfiles.find((p) => {
+      const decrypted = p.stripeCustomerId ? (decryptSensitive(p.stripeCustomerId) || p.stripeCustomerId) : null;
+      return decrypted === customerId;
+    });
   }
 }
 

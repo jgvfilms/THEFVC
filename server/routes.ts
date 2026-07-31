@@ -23,6 +23,7 @@ import { rateLimit } from "./middleware/rateLimit";
 import { encryptSensitive, decryptSensitive, maskTaxId, isValidTaxId } from "./lib/encryption";
 import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, stripe } from "./lib/stripe";
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
+import { getHealth } from "./lib/health";
 import { Stripe } from "stripe";
 
 // ===== AUTH HELPERS (re-exported from middleware/auth.ts) =====
@@ -63,6 +64,13 @@ export async function registerRoutes(
   app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login" }));
   app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup" }));
   app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset" }));
+
+  // PRD-023v2: Health check endpoint (public, no auth required)
+  app.get("/api/health", async (_req, res) => {
+    const health = await getHealth();
+    const statusCode = health.status === "unhealthy" ? 503 : 200;
+    res.status(statusCode).json(health);
+  });
 
   // ----- AUTH -----
   app.post("/api/auth/signup", async (req: AuthedRequest, res: Response) => {
@@ -956,6 +964,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
         success: true,
+        requestId: req.requestId || null,
       });
       res.json({ success: true, message: "If the email exists, a reset link will be sent." });
     } catch (err) {
@@ -986,6 +995,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
         success: true,
+        requestId: req.requestId || null,
       });
       res.json({ success: true, message: "Password updated successfully" });
     } catch (err) {
@@ -1026,6 +1036,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
         success: true,
+        requestId: req.requestId || null,
       });
       res.json({ success: true, message: "Verification email sent." });
     } catch (err) {
@@ -1051,6 +1062,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
         success: true,
+        requestId: req.requestId || null,
       });
       res.json({ success: true, message: "Email verified successfully" });
     } catch (err) {
@@ -1326,6 +1338,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ limit: getQueryParam(req.query, "limit") }),
+      requestId: req.requestId || null,
     });
     const limit = req.query.limit ? getQueryParamInt(req.query, "limit", 0) : 50;
     const payments = storage.getPaymentsByUser(req.userId!, limit);
@@ -1340,6 +1353,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ paymentId: req.params.id }),
+      requestId: req.requestId || null,
     });
     const payment = storage.getPayment(parseInt(String(req.params.id)));
     if (!payment || payment.userId !== req.userId) {
@@ -1357,6 +1371,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ action: "view" }),
+      requestId: req.requestId || null,
     });
     const form = storage.getW9Form(req.userId!);
     if (!form) {
@@ -1400,6 +1415,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("user-agent") || "",
         details: JSON.stringify({ fullName, hasBusinessName: !!businessName }),
+        requestId: req.requestId || null,
       });
       // Update profile flag
       storage.updateProfileSubscription(req.userId!, { w9Collected: true });
@@ -1580,6 +1596,10 @@ export async function registerRoutes(
     const payments = storage.getPaymentsByUser(req.userId!, 1000);
     const w9 = storage.getW9Form(req.userId!);
     const feedback = storage.getFeedbackByUser(req.userId!);
+
+    // PRD-022v2: Include audit logs and analytics in GDPR export
+    const auditLogs = storage.getSecurityLogsByUser(req.userId!, 5000);
+    const analyticsEventsData = storage.getAnalyticsByUser(req.userId!, 5000);
 
     const exportData = {
       user: {

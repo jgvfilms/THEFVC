@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
+import { randomUUID } from "node:crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
@@ -146,6 +147,13 @@ declare module "http" {
   }
 }
 
+// Extend Express Request to include requestId
+declare module "express" {
+  interface Request {
+    requestId?: string;
+  }
+}
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -198,6 +206,13 @@ app.use((req, res, next) => {
     }
   });
 
+  next();
+});
+
+// PRD-018v2: Request ID middleware — attach unique ID to every request for audit trail correlation
+app.use((req, res, next) => {
+  req.requestId = (req.headers["x-request-id"] as string) || randomUUID();
+  res.setHeader("X-Request-Id", req.requestId);
   next();
 });
 
