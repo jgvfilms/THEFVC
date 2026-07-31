@@ -116,8 +116,8 @@ const NEW_TABLES = [
   )`,
   `CREATE TABLE IF NOT EXISTS email_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    to TEXT NOT NULL,
-    from TEXT NOT NULL,
+    "to" TEXT NOT NULL,
+    "from" TEXT NOT NULL,
     subject TEXT NOT NULL,
     html TEXT NOT NULL,
     text TEXT,
