@@ -1287,7 +1287,7 @@ export async function registerRoutes(
         payment_method_types: ["card"],
         line_items: [{ price: tier.stripePriceId, quantity: 1 }],
         customer: profile.stripeCustomerId || undefined,
-        customer_email: profile.stripeCustomerId ? undefined : profile.userEmail || undefined,
+        customer_email: profile.stripeCustomerId ? undefined : undefined,
         success_url: `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments`,
         metadata: { userId: String(req.userId!), tierName },
@@ -1449,6 +1449,7 @@ export async function registerRoutes(
         ipAddress: req.ip,
         userAgent: req.get("user-agent") || "",
         details: JSON.stringify({}),
+        requestId: req.requestId || null,
       });
       // PRD-019: Create real Stripe Connect account
       const user = storage.getUser(req.userId!);
@@ -1491,6 +1492,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({}),
+      requestId: req.requestId || null,
     });
     storage.updateProfileSubscription(req.userId!, {
       subscriptionStatus: "active",
@@ -1538,6 +1540,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ year: getQueryParam(req.query, "year") }),
+      requestId: req.requestId || null,
     });
     const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear();
     const payments = storage.getAllPayments(10000); // admin fetch all
@@ -1589,6 +1592,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({}),
+      requestId: req.requestId || null,
     });
 
     const user = storage.getUser(req.userId!);
@@ -1648,6 +1652,18 @@ export async function registerRoutes(
         message: f.message,
         createdAt: f.createdAt,
       })),
+      // PRD-022v2: Audit logs and analytics for GDPR export completeness
+      auditLogs: auditLogs.map((log: any) => ({
+        action: log.action,
+        ipAddress: log.ipAddress,
+        details: log.details,
+        createdAt: log.createdAt,
+      })),
+      analyticsEvents: analyticsEventsData.map((event: any) => ({
+        eventType: event.eventType,
+        metadata: event.properties,
+        createdAt: event.createdAt,
+      })),
     };
 
     res.setHeader("Content-Type", "application/json");
@@ -1663,6 +1679,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({}),
+      requestId: req.requestId || null,
     });
 
     // Check for active subscriptions
@@ -1711,6 +1728,7 @@ export async function registerRoutes(
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ analytics, marketing }),
+      requestId: req.requestId || null,
     });
     res.json({ success: true });
   });

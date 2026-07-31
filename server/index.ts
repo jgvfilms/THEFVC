@@ -210,7 +210,7 @@ app.use((req, res, next) => {
 });
 
 // PRD-018v2: Request ID middleware — attach unique ID to every request for audit trail correlation
-app.use((req, res, next) => {
+app.use((req: any, res: any, next: any) => {
   req.requestId = (req.headers["x-request-id"] as string) || randomUUID();
   res.setHeader("X-Request-Id", req.requestId);
   next();

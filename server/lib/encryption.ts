@@ -17,7 +17,7 @@ if (!ENCRYPTION_KEY) {
  * Derive a 32-byte key from the encryption secret using scrypt.
  */
 function deriveKey(): Buffer {
-  return scryptSync(ENCRYPTION_KEY, "fvc-salt", 32);
+  return scryptSync(ENCRYPTION_KEY as string, "fvc-salt", 32);
 }
 
 /**
