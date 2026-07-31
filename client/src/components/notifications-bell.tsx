@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useWebSocket, Notification } from "@/lib/useWebSocket";
 import { useAuth } from "@/lib/auth";
+import { getAuthToken } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 
 interface NotificationsContextType {
@@ -28,7 +29,8 @@ export function useNotifications() {
  * Wraps the app to provide real-time notifications to all components.
  */
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
+  const token = getAuthToken();
   const ws = useWebSocket(token);
 
   const markAllRead = () => {

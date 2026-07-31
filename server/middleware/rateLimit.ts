@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { db } from "../storage";
 import { blockedIps } from "@shared/schema";
-import { eq, and, gt, or, lt } from "drizzle-orm";
+import { eq, and, gt, or, lt, isNull } from "drizzle-orm";
 
 /**
  * In-memory rate limit store.
@@ -100,7 +100,7 @@ async function isIpBlocked(ip: string): Promise<boolean> {
         and(
           eq(blockedIps.ipAddress, ip),
           eq(blockedIps.isActive, true),
-          or(eq(blockedIps.expiresAt, null), gt(blockedIps.expiresAt, new Date()))
+          or(isNull(blockedIps.expiresAt), gt(blockedIps.expiresAt, new Date()))
         )
       )
       .get();

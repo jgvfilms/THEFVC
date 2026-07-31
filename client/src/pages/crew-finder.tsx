@@ -173,7 +173,7 @@ export function CrewFinder() {
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {activeFilters.map((f) => (
-              <Badge key={f} variant="secondary" className="text-xs">
+              <Badge key={String(f)} variant="secondary" className="text-xs">
                 {f}
               </Badge>
             ))}

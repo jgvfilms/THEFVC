@@ -31,6 +31,22 @@ import { Stripe } from "stripe";
 
 const BETA_SEAT_LIMIT = 50;
 
+// Helper: safely extract a string query param (Express returns string | string[] | undefined)
+const getQueryParam = (query: any, key: string): string | undefined => {
+  const val = query[key];
+  if (typeof val === "string") return val;
+  if (Array.isArray(val)) return val[0];
+  return undefined;
+};
+
+// Helper: safely extract an integer query param
+const getQueryParamInt = (query: any, key: string, fallback: number): number => {
+  const val = getQueryParam(query, key);
+  if (!val) return fallback;
+  const parsed = parseInt(val, 10);
+  return isNaN(parsed) ? fallback : parsed;
+};
+
 // ===== ROUTES =====
 export async function registerRoutes(
   httpServer: Server,
@@ -201,17 +217,17 @@ export async function registerRoutes(
 
   // ----- PROFILES -----
   app.get("/api/profiles", async (_req: AuthedRequest, res: Response) => {
-    const role = _req.query.role as string;
-    const city = _req.query.city as string;
-    const skill = _req.query.skill as string;
-    const availability = _req.query.availability as string;
+    const role = getQueryParam(_req.query, "role") as string;
+    const city = getQueryParam(_req.query, "city") as string;
+    const skill = getQueryParam(_req.query, "skill") as string;
+    const availability = getQueryParam(_req.query, "availability") as string;
 
     const results = storage.searchProfiles({ role, city, skill, availability });
     res.json(results);
   });
 
   app.get("/api/profiles/:handle", async (req: AuthedRequest, res: Response) => {
-    const profile = storage.getProfileByHandle(req.params.handle);
+    const profile = storage.getProfileByHandle(String(req.params.handle));
     if (!profile) {
       return res.status(404).json({ error: "Profile not found" });
     }
@@ -364,7 +380,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/productions/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const prod = storage.getProduction(parseInt(req.params.id));
+    const prod = storage.getProduction(parseInt(String(req.params.id)));
     if (!prod) {
       return res.status(404).json({ error: "Production not found" });
     }
@@ -373,7 +389,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/productions/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const prod = storage.getProduction(parseInt(req.params.id));
+    const prod = storage.getProduction(parseInt(String(req.params.id)));
     if (!prod || prod.creatorId !== req.userId) {
       return res.status(403).json({ error: "Not authorized" });
     }
@@ -383,7 +399,7 @@ export async function registerRoutes(
 
   // ----- PRODUCTION CREW -----
   app.get("/api/productions/:id/crew", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const crew = storage.getCrewByProduction(parseInt(req.params.id));
+    const crew = storage.getCrewByProduction(parseInt(String(req.params.id)));
     res.json(crew);
   });
 
@@ -391,7 +407,7 @@ export async function registerRoutes(
     try {
       const member = storage.addCrewMember({
         ...req.body,
-        productionId: parseInt(req.params.id),
+        productionId: parseInt(String(req.params.id)),
       });
       res.status(201).json(member);
     } catch (err) {
@@ -400,18 +416,18 @@ export async function registerRoutes(
   });
 
   app.patch("/api/crew/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const updated = storage.updateCrewMember(parseInt(req.params.id), req.body);
+    const updated = storage.updateCrewMember(parseInt(String(req.params.id)), req.body);
     res.json(updated);
   });
 
   app.delete("/api/crew/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    storage.removeCrewMember(parseInt(req.params.id));
+    storage.removeCrewMember(parseInt(String(req.params.id)));
     res.json({ success: true });
   });
 
   // ----- CREDITS -----
   app.get("/api/profiles/:handle/credits", async (req: AuthedRequest, res: Response) => {
-    const profile = storage.getProfileByHandle(req.params.handle);
+    const profile = storage.getProfileByHandle(String(req.params.handle));
     if (!profile) {
       return res.status(404).json({ error: "Profile not found" });
     }
@@ -502,7 +518,7 @@ export async function registerRoutes(
 
   // Validate invite token (for auth page)
   app.get("/api/beta/invite/:token", async (req: AuthedRequest, res: Response) => {
-    const invite = storage.getInviteByToken(req.params.token);
+    const invite = storage.getInviteByToken(String(req.params.token));
     if (!invite || invite.status !== "active" || invite.usedCount >= invite.maxUses) {
       return res.status(404).json({ valid: false });
     }
@@ -593,7 +609,7 @@ export async function registerRoutes(
   // Approve a beta request → generates invite
   app.post("/api/admin/beta/requests/:id/approve", requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      const betaReq = storage.getBetaRequest(parseInt(req.params.id));
+      const betaReq = storage.getBetaRequest(parseInt(String(req.params.id)));
       if (!betaReq) {
         return res.status(404).json({ error: "Request not found" });
       }
@@ -610,9 +626,9 @@ export async function registerRoutes(
       const token = randomBytes(32).toString("base64url");
       const invite = storage.createInvite({
         token,
-        email: betaReq.email,
-        displayName: betaReq.displayName,
-        role: betaReq.role,
+        email: betaReq.email || undefined,
+        displayName: betaReq.displayName || undefined,
+        role: betaReq.role || undefined,
         createdBy: req.userId!,
         notes: `Auto-generated for request #${betaReq.id}`,
       });
@@ -636,7 +652,7 @@ export async function registerRoutes(
 
   // Reject a beta request
   app.post("/api/admin/beta/requests/:id/reject", requireAdmin, async (req: AuthedRequest, res: Response) => {
-    const betaReq = storage.getBetaRequest(parseInt(req.params.id));
+    const betaReq = storage.getBetaRequest(parseInt(String(req.params.id)));
     if (!betaReq) {
       return res.status(404).json({ error: "Request not found" });
     }
@@ -665,7 +681,7 @@ export async function registerRoutes(
 
   // Revoke an invite
   app.post("/api/admin/beta/invites/:id/revoke", requireAdmin, async (req: AuthedRequest, res: Response) => {
-    storage.revokeInvite(parseInt(req.params.id));
+    storage.revokeInvite(parseInt(String(req.params.id)));
     res.json({ success: true });
   });
 
@@ -675,7 +691,7 @@ export async function registerRoutes(
     if (!["active", "revoked"].includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
-    const user = storage.updateUserAccess(parseInt(req.params.id), status);
+    const user = storage.updateUserAccess(parseInt(String(req.params.id)), status);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -686,7 +702,7 @@ export async function registerRoutes(
   app.patch("/api/admin/feedback/:id", requireAdmin, async (req: AuthedRequest, res: Response) => {
     const { status, adminNotes } = req.body;
     const allFeedback = storage.getFeedback();
-    const feedback = allFeedback.find(f => f.id === parseInt(req.params.id));
+    const feedback = allFeedback.find(f => f.id === parseInt(String(req.params.id)));
     if (!feedback) {
       return res.status(404).json({ error: "Feedback not found" });
     }
@@ -698,7 +714,7 @@ export async function registerRoutes(
   // ===== FEED =====
   // Public feed (no auth required, public items only)
   app.get("/api/feed/public", async (req: Request, res: Response) => {
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const limit = Math.min(getQueryParamInt(req.query, "limit", 0) || 20, 50);
     const items = storage.getFeed(limit, 0, true);
     // Sanitize: only return safe fields, no emails
     const sanitized = items.map((item) => ({
@@ -723,7 +739,7 @@ export async function registerRoutes(
 
   // Authenticated feed ( richer data)
   app.get("/api/feed", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const limit = Math.min(getQueryParamInt(req.query, "limit", 0) || 50, 100);
     const items = storage.getFeed(limit);
     const posts = storage.getPosts(limit);
     res.json({ activities: items, posts });
@@ -863,12 +879,11 @@ export async function registerRoutes(
   // Security audit log (admin only)
   app.get("/api/compliance/security-log", requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      const { userId, action, limit, since } = req.query as Record<string, string>;
       const events = storage.getSecurityLog({
-        userId: userId ? parseInt(userId) : undefined,
-        action: action,
-        limit: limit ? parseInt(limit) : 100,
-        since: since ? new Date(since) : undefined,
+        userId: getQueryParamInt(req.query, "userId", 0) || undefined,
+        action: getQueryParam(req.query, "action"),
+        limit: getQueryParamInt(req.query, "limit", 100),
+        since: getQueryParam(req.query, "since") ? new Date(getQueryParam(req.query, "since") as string) : undefined,
       });
       res.json(events);
     } catch (err) {
@@ -917,6 +932,7 @@ export async function registerRoutes(
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
       storage.createPasswordReset({
         userId: user.id,
+        email: user.email,
         token,
         expiresAt,
         used: false,
@@ -929,7 +945,7 @@ export async function registerRoutes(
         subject: "Password Reset Request",
         html: passwordResetTemplate({
           resetUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/reset-password?token=${token}`,
-          userHandle: user.displayName || user.handle,
+          userHandle: user?.handle,
         }).html,
         metadata: { type: "password_reset", userId: user.id },
       });
@@ -1000,7 +1016,7 @@ export async function registerRoutes(
         subject: "Email Verification",
         html: emailVerificationTemplate({
           verificationUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/verify-email?token=${token}`,
-          userHandle: user.displayName || user.handle,
+          userHandle: user?.handle,
         }).html,
         metadata: { type: "email_verification", userId: user.id },
       });
@@ -1069,12 +1085,11 @@ export async function registerRoutes(
   // Get analytics events (admin only)
   app.get("/api/analytics/events", requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      const { userId, eventType, limit, since } = req.query as Record<string, string>;
       const events = storage.getAnalyticsEvents({
-        userId: userId ? parseInt(userId) : undefined,
-        eventType: eventType,
-        limit: limit ? parseInt(limit) : 100,
-        since: since ? new Date(since) : undefined,
+        userId: getQueryParamInt(req.query, "userId", 0) || undefined,
+        eventType: getQueryParam(req.query, "eventType"),
+        limit: getQueryParamInt(req.query, "limit", 100),
+        since: getQueryParam(req.query, "since") ? new Date(getQueryParam(req.query, "since") as string) : undefined,
       });
       res.json(events);
     } catch (err) {
@@ -1085,8 +1100,7 @@ export async function registerRoutes(
   // Get analytics summary (admin only)
   app.get("/api/analytics/summary", requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      const { since } = req.query as Record<string, string>;
-      const sinceDate = since ? new Date(since) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const sinceDate = getQueryParam(req.query, "since") ? new Date(getQueryParam(req.query, "since") as string) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const { getAnalyticsSummary } = await import("./analytics");
       const summary = await getAnalyticsSummary(sinceDate);
       res.json(summary);
@@ -1099,11 +1113,10 @@ export async function registerRoutes(
   // Get user's notifications
   app.get("/api/notifications", requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
-      const { limit, unreadOnly } = req.query as Record<string, string>;
       const notifications = storage.getNotifications(
         req.userId!,
-        limit ? parseInt(limit) : 50,
-        unreadOnly === "true"
+        getQueryParamInt(req.query, "limit", 50),
+        getQueryParam(req.query, "unreadOnly") === "true"
       );
       res.json(notifications);
     } catch (err) {
@@ -1124,7 +1137,7 @@ export async function registerRoutes(
   // Mark a notification as read
   app.post("/api/notifications/:id/read", requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
-      storage.markNotificationRead(parseInt(req.params.id));
+      storage.markNotificationRead(parseInt(String(req.params.id)));
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to mark notification as read" });
@@ -1144,7 +1157,7 @@ export async function registerRoutes(
   // Delete a notification
   app.delete("/api/notifications/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
-      storage.deleteNotification(parseInt(req.params.id));
+      storage.deleteNotification(parseInt(String(req.params.id)));
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete notification" });
@@ -1154,14 +1167,14 @@ export async function registerRoutes(
   // ===== PRD-006: Crew Finder Pagination Endpoint =====
   app.get("/api/profiles/paginated", async (req: AuthedRequest, res: Response) => {
     const opts = {
-      role: req.query.role as string | undefined,
-      city: req.query.city as string | undefined,
-      skill: req.query.skill as string | undefined,
-      availability: req.query.availability as string | undefined,
-      sortBy: req.query.sortBy as string | undefined,
-      sortDir: req.query.sortDir as string | undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+      role: getQueryParam(req.query, "role") as string | undefined,
+      city: getQueryParam(req.query, "city") as string | undefined,
+      skill: getQueryParam(req.query, "skill") as string | undefined,
+      availability: getQueryParam(req.query, "availability") as string | undefined,
+      sortBy: getQueryParam(req.query, "sortBy") as string | undefined,
+      sortDir: getQueryParam(req.query, "sortDir") as string | undefined,
+      limit: getQueryParam(req.query, "limit") ? getQueryParamInt(req.query, "limit", 50) : undefined,
+      offset: getQueryParam(req.query, "offset") ? getQueryParamInt(req.query, "offset", 0) : undefined,
     };
     const result = storage.searchProfilesPaginated(opts);
     res.json(result);
@@ -1176,7 +1189,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/subscription-tiers/:name", async (req: AuthedRequest, res: Response) => {
-    const tier = storage.getSubscriptionTier(req.params.name);
+    const tier = storage.getSubscriptionTier(String(req.params.name));
     if (!tier) {
       return res.status(404).json({ error: "Tier not found" });
     }
@@ -1268,9 +1281,9 @@ export async function registerRoutes(
       action: "payments_accessed",
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
-      details: JSON.stringify({ limit: req.query.limit }),
+      details: JSON.stringify({ limit: getQueryParam(req.query, "limit") }),
     });
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const limit = req.query.limit ? getQueryParamInt(req.query, "limit", 0) : 50;
     const payments = storage.getPaymentsByUser(req.userId!, limit);
     res.json(payments);
   });
@@ -1284,7 +1297,7 @@ export async function registerRoutes(
       userAgent: req.get("user-agent") || "",
       details: JSON.stringify({ paymentId: req.params.id }),
     });
-    const payment = storage.getPayment(parseInt(req.params.id));
+    const payment = storage.getPayment(parseInt(String(req.params.id)));
     if (!payment || payment.userId !== req.userId) {
       return res.status(404).json({ error: "Payment not found" });
     }
@@ -1353,10 +1366,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/w9/forms", requireAuth, async (req: AuthedRequest, res: Response) => {
-    if (!req.user?.isAdmin) {
+    if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const status = req.query.status as string | undefined;
+    const status = getQueryParam(req.query, "status") as string | undefined;
     const forms = storage.getW9Forms(status);
     // PRD-018: Decrypt tax IDs for admin display (masked)
     const decryptedForms = forms.map((form) => ({
@@ -1455,7 +1468,7 @@ export async function registerRoutes(
 
   // --- Tax Export (PRD-007) ---
   app.get("/api/admin/tax-export", requireAuth, async (req: AuthedRequest, res: Response) => {
-    if (!req.user?.isAdmin) {
+    if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
     // PRD-018: Audit log for tax export
@@ -1464,9 +1477,9 @@ export async function registerRoutes(
       action: "tax_export_accessed",
       ipAddress: req.ip,
       userAgent: req.get("user-agent") || "",
-      details: JSON.stringify({ year: req.query.year }),
+      details: JSON.stringify({ year: getQueryParam(req.query, "year") }),
     });
-    const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+    const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear();
     const payments = storage.getAllPayments(10000); // admin fetch all
     const w9Forms = storage.getW9Forms("verified");
 
@@ -1640,28 +1653,28 @@ export async function registerRoutes(
 
   // PRD-021: 1099 Form Generation
   app.get("/api/admin/1099-eligible", requireAuth, async (req: AuthedRequest, res: Response) => {
-    if (!req.user?.isAdmin) {
+    if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear() - 1;
+    const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear() - 1;
     const eligible = get1099EligibleContractors(year);
     res.json(eligible);
   });
 
   app.get("/api/admin/1099-forms", requireAuth, async (req: AuthedRequest, res: Response) => {
-    if (!req.user?.isAdmin) {
+    if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear() - 1;
+    const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear() - 1;
     const forms = generate1099Forms(year);
     res.json(forms.map((f) => generate1099NECData(f)));
   });
 
   app.get("/api/admin/1099-export", requireAuth, async (req: AuthedRequest, res: Response) => {
-    if (!req.user?.isAdmin) {
+    if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear() - 1;
+    const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear() - 1;
     const forms = generate1099Forms(year);
     const exportData = forms.map((f) => generate1099NECData(f));
 
