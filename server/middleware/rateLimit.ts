@@ -2,17 +2,63 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "../storage";
 import { blockedIps } from "@shared/schema";
 import { eq, and, gt, or, lt, isNull } from "drizzle-orm";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 /**
- * In-memory rate limit store.
+ * In-memory rate limit store with file-backed persistence.
  * Keyed by `${ip}:${identifier}`. Stores { count, resetTime }.
+ * Data is loaded from disk on startup and periodically flushed to survive restarts.
  */
 interface RateLimitEntry {
   count: number;
   resetTime: number;
 }
 
+const RATE_LIMIT_FILE = join(process.cwd(), "data", ".rate-limits.json");
+
+// Ensure data directory exists
+try {
+  mkdirSync(join(process.cwd(), "data"), { recursive: true });
+} catch {}
+
+// Load persisted rate limit data on startup
 const rateLimitStore = new Map<string, RateLimitEntry>();
+if (existsSync(RATE_LIMIT_FILE)) {
+  try {
+    const data = JSON.parse(readFileSync(RATE_LIMIT_FILE, "utf8")) as Record<string, RateLimitEntry>;
+    for (const [key, value] of Object.entries(data)) {
+      // Only load entries that haven't expired yet
+      if (value.resetTime > Date.now()) {
+        rateLimitStore.set(key, value);
+      }
+    }
+  } catch {
+    // Corrupted file — start fresh
+  }
+}
+
+// Flush to disk every 60 seconds
+setInterval(() => {
+  try {
+    if (rateLimitStore.size === 0) {
+      // Remove file if no active entries
+      writeFileSync(RATE_LIMIT_FILE, "{}");
+      return;
+    }
+    const data: Record<string, RateLimitEntry> = {};
+    const now = Date.now();
+    for (const [key, value] of rateLimitStore) {
+      // Skip expired entries when persisting
+      if (value.resetTime > now) {
+        data[key] = value;
+      }
+    }
+    writeFileSync(RATE_LIMIT_FILE, JSON.stringify(data));
+  } catch {
+    // best-effort — don't crash the server
+  }
+}, 60_000);
 
 /**
  * Rate limiting middleware.
