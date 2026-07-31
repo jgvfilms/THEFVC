@@ -261,13 +261,17 @@ export function runMigrations() {
   sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_user ON security_audit_log(user_id);`);
   sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_security_audit_action ON security_audit_log(action);`);
 
-  // Bootstrap admin: create jgvfilms@gmail.com if missing, always set is_admin
-  const adminEmail = "jgvfilms@gmail.com";
+  // Bootstrap admin: create from env vars if missing, always set is_admin
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    console.warn("[migration] ADMIN_EMAIL or ADMIN_PASSWORD not set — skipping admin bootstrap");
+  } else {
   const adminUser = sqlite.prepare("SELECT id FROM users WHERE email = ?").get(adminEmail) as { id: number } | undefined;
   if (!adminUser) {
     // Create admin user
     const salt = randomBytes(16).toString("hex");
-    const hash = scryptSync("FVCbuf2024!", salt, 64).toString("hex");
+    const hash = scryptSync(adminPassword, salt, 64).toString("hex");
     const now = Date.now();
     const result = sqlite.prepare(
       "INSERT INTO users (handle, email, password_hash, is_admin, access_status, created_at) VALUES (?, ?, ?, 1, 'active', ?)"
@@ -321,7 +325,7 @@ export function runMigrations() {
     const oldVerify = scryptSync("admin123", oldSalt, 64).toString("hex");
     if (oldVerify === oldHash) {
       const newSalt = randomBytes(16).toString("hex");
-      const newHash = scryptSync("FVCbuf2024!", newSalt, 64).toString("hex");
+      const newHash = scryptSync(adminPassword, newSalt, 64).toString("hex");
       sqlite.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(`${newSalt}:${newHash}`, adminUser.id);
       console.log("[migration] Upgraded admin password from default");
     }
@@ -338,6 +342,7 @@ export function runMigrations() {
       console.log(`[migration] Created admin profile for existing user`);
     }
   }
+  } // end else (ADMIN_EMAIL/ADMIN_PASSWORD set)
 
   // Ensure uploads directory exists
   const uploadsDir = join(process.cwd(), "uploads", "profiles");

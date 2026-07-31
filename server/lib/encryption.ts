@@ -8,7 +8,10 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 
 // Encryption key derivation — in production, this should come from a KMS or vault
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "thefvc-encryption-key-change-in-production";
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  throw new Error("ENCRYPTION_KEY environment variable is required. Generate with: openssl rand -hex 32");
+}
 
 /**
  * Derive a 32-byte key from the encryption secret using scrypt.
