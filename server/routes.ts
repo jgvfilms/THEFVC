@@ -1271,6 +1271,7 @@ export async function registerRoutes(
             ipAddress: req.ip || "",
             userAgent: req.headers["user-agent"] || "",
             details: JSON.stringify({ from: profile.subscriptionTier, to: tierName, subscriptionId: updatedSub.id }),
+            requestId: req.requestId || null,
           });
 
           return res.json({
