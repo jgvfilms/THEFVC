@@ -186,7 +186,7 @@ export interface IStorage {
     sortDir?: string;
     limit?: number;
     offset?: number;
-  }): { profiles: Profile[]; total: number };
+  }): { profiles: (Profile & { handle: string })[]; total: number };
 
   getProfileByStripeAccountId(accountId: string): Profile | undefined;
   getProfileByStripeCustomerId(customerId: string): Profile | undefined;
@@ -721,14 +721,14 @@ export class DatabaseStorage implements IStorage {
     sortDir?: string;
     limit?: number;
     offset?: number;
-  }): { profiles: Profile[]; total: number } {
+  }): { profiles: (Profile & { handle: string })[]; total: number } {
     const limit = Math.min(opts.limit || 20, 50);
     const offset = opts.offset || 0;
-    let query = db.select().from(profiles).$dynamic();
-    const conditions = [eq(profiles.isPublic, true)];
 
     // Helper: escape LIKE wildcards to prevent wildcard injection
     const escapeLike = (str: string) => str.replace(/[%_]/g, (m) => `\\${m}`);
+
+    const conditions = [eq(profiles.isPublic, true)];
 
     if (opts.role) {
       conditions.push(like(profiles.role, `%${escapeLike(opts.role)}%`));
@@ -739,22 +739,29 @@ export class DatabaseStorage implements IStorage {
     if (opts.availability) {
       conditions.push(eq(profiles.availability, opts.availability));
     }
-
-    query = query.where(and(...conditions));
-
     if (opts.skill) {
-      const skillCondition = like(profiles.skills, `%${escapeLike(opts.skill)}%`);
-      query = query.where(skillCondition);
-      conditions.push(skillCondition);
+      conditions.push(like(profiles.skills, `%${escapeLike(opts.skill)}%`));
     }
 
     // Sort options
     const sortField = opts.sortBy || "createdAt";
     const sortDir = opts.sortDir === "asc" ? "asc" : "desc";
     const sortColumn = sortField === "dayRate" ? profiles.dayRate : sortField === "displayName" ? profiles.displayName : profiles.createdAt;
-    query = sortDir === "asc" ? query.orderBy(sortColumn) : query.orderBy(desc(sortColumn));
 
-    const profilesList = query.limit(limit).offset(offset).all();
+    // Join with users to get the real handle
+    const profilesList = db
+      .select({
+        ...profiles,
+        handle: users.handle,
+      })
+      .from(profiles)
+      .innerJoin(users, eq(profiles.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(sortDir === "asc" ? sortColumn : desc(sortColumn))
+      .limit(limit)
+      .offset(offset)
+      .all();
+
     const totalResult = db.select({ count: sql`count(*)` }).from(profiles).where(and(...conditions)).get();
     const total = Number(totalResult?.count ?? 0);
 

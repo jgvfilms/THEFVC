@@ -28,7 +28,7 @@ const SORT_OPTIONS = [
 const PAGE_SIZE = 20;
 
 interface CrewFinderResponse {
-  profiles: Profile[];
+  profiles: (Profile & { handle: string })[];
   total: number;
 }
 
@@ -202,7 +202,7 @@ export function CrewFinder() {
           {profiles.map((p) => {
             const skills: string[] = p.skills ? JSON.parse(p.skills) : [];
             return (
-              <Link key={p.id} href={`/u/${getHandleFromProfile(p)}`}>
+              <Link key={p.id} href={`/u/${p.handle}`}>
                 <Card className="hover:border-primary/40 transition-colors cursor-pointer" data-testid={`card-crew-${p.id}`}>
                   <CardContent className="py-4 flex items-start gap-3">
                     <Avatar className="h-12 w-12 flex-shrink-0">
@@ -295,7 +295,4 @@ export function CrewFinder() {
   );
 }
 
-// Helper to construct a handle-based URL (profiles don't store handle directly)
-function getHandleFromProfile(_p: Profile): string {
-  return _p.displayName.toLowerCase().replace(/\s+/g, "");
-}
+

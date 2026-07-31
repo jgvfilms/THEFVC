@@ -195,7 +195,9 @@ export function ProfileEdit() {
     }
 
     const data: Record<string, unknown> = { ...form };
-    if (skills.length > 0) data.skills = JSON.stringify(skills);
+    // Always send skills — include "[]" when empty so the backend clears them
+    const skillsValue = skills.length > 0 ? JSON.stringify(skills) : "[]";
+    data.skills = skillsValue;
     if (videoLinks.length > 0) data.videoLinks = JSON.stringify(videoLinks);
     if (Object.keys(socialLinks).length > 0) data.socialLinks = JSON.stringify(socialLinks);
     updateMutation.mutate(data as Partial<Profile>);
