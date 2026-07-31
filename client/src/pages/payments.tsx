@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 interface SubscriptionStatus {
   tier: string;
   status: string;
-  stripeCustomerId?: string | null;
+  // PRD-019v2: stripeCustomerId removed from API response — not needed by client
 }
 
 export function PaymentsPage() {

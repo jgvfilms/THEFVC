@@ -1205,7 +1205,7 @@ export async function registerRoutes(
     res.json({
       tier: profile.subscriptionTier,
       status: profile.subscriptionStatus,
-      stripeCustomerId: profile.stripeCustomerId,
+      // PRD-019v2: stripeCustomerId removed — internal identifier, not needed by client
     });
   });
 
@@ -1227,11 +1227,55 @@ export async function registerRoutes(
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
+
+      // PRD-019v2: Check for existing active subscription — upgrade/downgrade instead of new checkout
+      if (profile.stripeCustomerId) {
+        const existingSubscriptions = await stripe.subscriptions.list({
+          customer: profile.stripeCustomerId,
+          status: "active",
+          limit: 1,
+        });
+
+        if (existingSubscriptions.data.length > 0) {
+          // Upgrade/downgrade: update existing subscription
+          const existingSub = existingSubscriptions.data[0];
+          const updatedSub = await stripe.subscriptions.update(existingSub.id, {
+            items: [{
+              id: existingSub.items.data[0].id,
+              price: tier.stripePriceId,
+            }],
+            proration_behavior: "create_prorations",
+          });
+
+          // Update local subscription tier
+          storage.updateProfileSubscription(req.userId!, {
+            subscriptionTier: tierName,
+            subscriptionStatus: "active",
+          });
+
+          storage.createSecurityLog({
+            userId: req.userId!,
+            action: "subscription_upgraded",
+            ipAddress: req.ip || "",
+            userAgent: req.headers["user-agent"] || "",
+            details: JSON.stringify({ from: profile.subscriptionTier, to: tierName, subscriptionId: updatedSub.id }),
+          });
+
+          return res.json({
+            upgraded: true,
+            subscriptionId: updatedSub.id,
+            newTier: tierName,
+          });
+        }
+      }
+
+      // No existing subscription — create new checkout session
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         payment_method_types: ["card"],
         line_items: [{ price: tier.stripePriceId, quantity: 1 }],
-        customer_email: profile.stripeCustomerId || undefined,
+        customer: profile.stripeCustomerId || undefined,
+        customer_email: profile.stripeCustomerId ? undefined : profile.userEmail || undefined,
         success_url: `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/payments`,
         metadata: { userId: String(req.userId!), tierName },

@@ -71,6 +71,14 @@ export function W9FormPage() {
     if (!form.fullName.trim()) errors.push("Legal name is required");
     if (!form.taxClassification) errors.push("Tax classification is required");
     if (!form.einOrSsn.trim()) errors.push("Tax ID (EIN or SSN) is required");
+    // PRD-021v2: Client-side EIN/SSN format validation
+    if (form.einOrSsn.trim()) {
+      const einPattern = /^\d{2}-\d{7}$/;
+      const ssnPattern = /^\d{3}-\d{2}-\d{4}$|^\d{9}$/;
+      if (!einPattern.test(form.einOrSsn.trim()) && !ssnPattern.test(form.einOrSsn.trim())) {
+        errors.push("Tax ID must be EIN (XX-XXXXXXX) or SSN (XXX-XX-XXXX) format");
+      }
+    }
     if (!form.address.trim()) errors.push("Address is required");
     if (!form.city.trim()) errors.push("City is required");
     if (!form.state.trim()) errors.push("State is required");

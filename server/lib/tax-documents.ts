@@ -134,7 +134,7 @@ export function generate1099NECData(form: Form1099): Record<string, unknown> {
     taxYear: form.taxYear,
     payer: {
       name: "Film Video Collective (THEFVC.IS)",
-      tin: "81-2345678", // Payer's EIN
+      tin: process.env.PAYER_TIN || (() => { throw new Error("PAYER_TIN environment variable is required for 1099 generation"); })(), // Payer's EIN
       address: "New York, NY",
     },
     recipient: {
