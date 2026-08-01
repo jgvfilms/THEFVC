@@ -3,6 +3,7 @@
  * Basic health check endpoint for operational visibility.
  */
 import { sqlite } from "../migrate";
+import { execSync } from "node:child_process";
 
 interface HealthCheck {
   status: "healthy" | "degraded" | "unhealthy";
@@ -42,7 +43,6 @@ async function checkDatabase(): Promise<{ status: string; latencyMs: number }> {
 
 function checkDisk(): { status: string; freeGB: number } {
   try {
-    const { execSync } = require("child_process");
     const output = execSync("df -BG / | tail -1 | awk '{print $4}'", { encoding: "utf8" }).trim();
     const freeGB = parseInt(output) || 0;
     return { status: freeGB > 1 ? "healthy" : freeGB > 0 ? "degraded" : "unhealthy", freeGB };

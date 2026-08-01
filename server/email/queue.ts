@@ -4,8 +4,20 @@ import { emailQueue } from "@shared/schema";
 import type { InsertEmailQueue, EmailQueue } from "@shared/schema";
 import { eq, and, lte, desc } from "drizzle-orm";
 
-// Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY || "");
+// Resend is initialized lazily, not at module load. The SDK's constructor
+// throws immediately on an empty/missing API key, and this module used to
+// be instantiated eagerly with `process.env.RESEND_API_KEY || ""` — which
+// crashed the entire server on startup whenever RESEND_API_KEY wasn't set
+// (it isn't even listed in .env.example). Now the app boots fine without
+// it; sendEmail() below just fails that one email with a clear error
+// instead of taking the whole process down.
+let resend: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resend) return resend;
+  if (!process.env.RESEND_API_KEY) return null;
+  resend = new Resend(process.env.RESEND_API_KEY);
+  return resend;
+}
 
 const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@thefvc.is";
 
@@ -56,7 +68,11 @@ export async function sendEmail(id: number): Promise<boolean> {
     .run();
 
   try {
-    const result = await resend.emails.send({
+    const client = getResendClient();
+    if (!client) {
+      throw new Error("RESEND_API_KEY not configured — email sending is disabled");
+    }
+    const result = await client.emails.send({
       from: email.from,
       to: [email.to],
       subject: email.subject,

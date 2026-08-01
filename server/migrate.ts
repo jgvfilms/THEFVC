@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { scryptSync, randomBytes } from "node:crypto";
+import { encryptSensitive } from "./lib/encryption";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -273,7 +274,6 @@ export function runMigrations() {
   }
 
   // PRD-018v2: One-time migration — encrypt existing plaintext Stripe IDs
-  const { encryptSensitive } = require("./lib/encryption") as { encryptSensitive: (v: string) => string };
   const profilesToEncrypt = sqlite.prepare(
     "SELECT id, user_id, stripe_customer_id, stripe_connect_account_id FROM profiles WHERE stripe_customer_id IS NOT NULL OR stripe_connect_account_id IS NOT NULL"
   ).all() as Array<{ id: number; user_id: number; stripe_customer_id: string | null; stripe_connect_account_id: string | null }>;

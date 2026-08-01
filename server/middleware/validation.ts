@@ -42,7 +42,12 @@ export function validate(schemas: ValidationSchemas) {
             details: result.error?.errors || [],
           });
         }
-        req.query = result.data as any;
+        Object.defineProperty(req, "query", {
+          value: result.data,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
 
       if (schemas.params) {
