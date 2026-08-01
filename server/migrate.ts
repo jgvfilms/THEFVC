@@ -1,10 +1,18 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { scryptSync, randomBytes } from "node:crypto";
 import { encryptSensitive } from "./lib/encryption";
 
-const sqlite = new Database("data.db");
+// Respects DATABASE_PATH so deploy targets with a mounted persistent
+// volume (e.g. Railway) can point this at a durable path. Falls back
+// to the historical relative "data.db" for local dev.
+const dbPath = process.env.DATABASE_PATH || "data.db";
+const dbDir = dirname(dbPath);
+if (dbDir && dbDir !== ".") {
+  mkdirSync(dbDir, { recursive: true });
+}
+const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON"); // PRD-018: Enable foreign key enforcement
 
