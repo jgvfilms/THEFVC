@@ -30,7 +30,7 @@ import type {
   W9Form, InsertW9Form,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, and, like, or, desc, sql, gte, lt } from "drizzle-orm";
+import { eq, and, like, or, desc, sql, gte, lt, getTableColumns } from "drizzle-orm";
 import { sqlite } from "./migrate";
 import { decryptSensitive } from "./lib/encryption";
 
@@ -64,6 +64,7 @@ export interface IStorage {
 
   // Production Crew
   getCrewByProduction(productionId: number): (ProductionCrew & { profile?: Profile })[];
+  getCrewMember(id: number): ProductionCrew | undefined;
   addCrewMember(crew: InsertProductionCrew): ProductionCrew;
   updateCrewMember(id: number, data: Partial<InsertProductionCrew>): ProductionCrew | undefined;
   removeCrewMember(id: number): void;
@@ -316,6 +317,10 @@ export class DatabaseStorage implements IStorage {
 
   addCrewMember(crew: InsertProductionCrew): ProductionCrew {
     return db.insert(productionCrew).values(crew).returning().get();
+  }
+
+  getCrewMember(id: number): ProductionCrew | undefined {
+    return db.select().from(productionCrew).where(eq(productionCrew.id, id)).get();
   }
 
   updateCrewMember(id: number, data: Partial<InsertProductionCrew>): ProductionCrew | undefined {
@@ -751,7 +756,7 @@ export class DatabaseStorage implements IStorage {
     // Join with users to get the real handle
     const profilesList = db
       .select({
-        ...profiles,
+        ...getTableColumns(profiles),
         handle: users.handle,
       })
       .from(profiles)

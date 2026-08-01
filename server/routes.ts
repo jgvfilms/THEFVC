@@ -392,6 +392,9 @@ export async function registerRoutes(
     if (!prod) {
       return res.status(404).json({ error: "Production not found" });
     }
+    if (prod.creatorId !== req.userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
     const crew = storage.getCrewByProduction(prod.id);
     res.json({ production: prod, crew });
   });
@@ -406,16 +409,34 @@ export async function registerRoutes(
   });
 
   // ----- PRODUCTION CREW -----
+  // Every route below verifies the requester owns the parent production
+  // before reading or writing crew data. Previously these only checked
+  // requireAuth, which let any logged-in member read or tamper with any
+  // other member's crew list/budget/day-rates by guessing IDs (IDOR).
   app.get("/api/productions/:id/crew", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const crew = storage.getCrewByProduction(parseInt(String(req.params.id)));
+    const prod = storage.getProduction(parseInt(String(req.params.id)));
+    if (!prod) {
+      return res.status(404).json({ error: "Production not found" });
+    }
+    if (prod.creatorId !== req.userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    const crew = storage.getCrewByProduction(prod.id);
     res.json(crew);
   });
 
   app.post("/api/productions/:id/crew", requireAuth, async (req: AuthedRequest, res: Response) => {
     try {
+      const prod = storage.getProduction(parseInt(String(req.params.id)));
+      if (!prod) {
+        return res.status(404).json({ error: "Production not found" });
+      }
+      if (prod.creatorId !== req.userId) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
       const member = storage.addCrewMember({
         ...req.body,
-        productionId: parseInt(String(req.params.id)),
+        productionId: prod.id,
       });
       res.status(201).json(member);
     } catch (err) {
@@ -424,12 +445,28 @@ export async function registerRoutes(
   });
 
   app.patch("/api/crew/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    const updated = storage.updateCrewMember(parseInt(String(req.params.id)), req.body);
+    const crewMember = storage.getCrewMember(parseInt(String(req.params.id)));
+    if (!crewMember) {
+      return res.status(404).json({ error: "Crew member not found" });
+    }
+    const prod = storage.getProduction(crewMember.productionId);
+    if (!prod || prod.creatorId !== req.userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    const updated = storage.updateCrewMember(crewMember.id, req.body);
     res.json(updated);
   });
 
   app.delete("/api/crew/:id", requireAuth, async (req: AuthedRequest, res: Response) => {
-    storage.removeCrewMember(parseInt(String(req.params.id)));
+    const crewMember = storage.getCrewMember(parseInt(String(req.params.id)));
+    if (!crewMember) {
+      return res.status(404).json({ error: "Crew member not found" });
+    }
+    const prod = storage.getProduction(crewMember.productionId);
+    if (!prod || prod.creatorId !== req.userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    storage.removeCrewMember(crewMember.id);
     res.json({ success: true });
   });
 

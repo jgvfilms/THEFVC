@@ -124,12 +124,29 @@ export function rateLimit(opts: RateLimitOptions) {
 }
 
 /**
- * Get the real client IP, respecting X-Forwarded-For.
+ * Get the real client IP, respecting X-Forwarded-For — but only for the
+ * number of trusted reverse-proxy hops this deployment actually has.
+ *
+ * X-Forwarded-For is client-suppliable. Trusting the leftmost value (the
+ * previous behavior) let any requester spoof their IP for rate-limit and
+ * IP-block purposes in both directions: rotate a fake IP each request to
+ * dodge the limit, or forge a victim's real IP to get *them* auto-blocked.
+ *
+ * TRUSTED_PROXY_HOPS (default 1) should match the actual deployment
+ * topology — 1 for a single nginx reverse proxy in front of the app, per
+ * the deployment docs. Only the last N entries in the chain were appended
+ * by proxies you control; anything before that came from the client.
  */
+const TRUSTED_PROXY_HOPS = parseInt(process.env.TRUSTED_PROXY_HOPS || "1", 10);
+
 export function getClientIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") {
-    return forwarded.split(",")[0].trim();
+  if (typeof forwarded === "string" && TRUSTED_PROXY_HOPS > 0) {
+    const chain = forwarded.split(",").map((ip) => ip.trim()).filter(Boolean);
+    const index = chain.length - TRUSTED_PROXY_HOPS;
+    if (index >= 0 && chain[index]) {
+      return chain[index];
+    }
   }
   return req.socket.remoteAddress || "unknown";
 }
