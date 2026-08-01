@@ -306,7 +306,7 @@ export function runMigrations() {
     // Create admin user
     const salt = randomBytes(16).toString("hex");
     const hash = scryptSync(adminPassword, salt, 64).toString("hex");
-    const now = Date.now();
+    const now = Math.floor(Date.now() / 1000);
     const result = sqlite.prepare(
       "INSERT INTO users (handle, email, password_hash, is_admin, access_status, created_at) VALUES (?, ?, ?, 1, 'active', ?)"
     ).run("jgvfilms", adminEmail, `${salt}:${hash}`, now);
@@ -371,7 +371,7 @@ export function runMigrations() {
       ).run(
         adminUser.id, "J. Garrett Vorreuter", "Director / Producer / Cinematographer", "Buffalo", "NY", "US",
         "Filmmaker and founder of the Film Video Collective.", "JV",
-        "https://www.imdb.com/name/nm7102371/", "https://thefvc.is", "cinema_gold", Date.now(), Date.now()
+        "https://www.imdb.com/name/nm7102371/", "https://thefvc.is", "cinema_gold", Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)
       );
       console.log(`[migration] Created admin profile for existing user`);
     }
