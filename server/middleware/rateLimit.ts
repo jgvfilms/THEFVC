@@ -15,11 +15,17 @@ interface RateLimitEntry {
   resetTime: number;
 }
 
-const RATE_LIMIT_FILE = join(process.cwd(), "data", ".rate-limits.json");
+// PRD-024: Configurable via RATE_LIMIT_DIR so this can be pointed at the same
+// mounted persistent volume as DATABASE_PATH on hosts with an ephemeral
+// filesystem (e.g. Railway). Previously hardcoded to process.cwd()/data,
+// which is NOT the volume mount path — persistence silently stopped
+// surviving redeploys despite this file's own comment claiming otherwise.
+const RATE_LIMIT_DIR = process.env.RATE_LIMIT_DIR || join(process.cwd(), "data");
+const RATE_LIMIT_FILE = join(RATE_LIMIT_DIR, ".rate-limits.json");
 
-// Ensure data directory exists
+// Ensure the directory exists
 try {
-  mkdirSync(join(process.cwd(), "data"), { recursive: true });
+  mkdirSync(RATE_LIMIT_DIR, { recursive: true });
 } catch {}
 
 // Load persisted rate limit data on startup

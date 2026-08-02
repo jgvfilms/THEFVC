@@ -1602,7 +1602,9 @@ export async function registerRoutes(
         userId: p.userId,
         displayName: profile?.displayName || "",
         email: user?.email || "",
-        taxId: w9?.einOrSsn ? maskTaxId(decryptSensitive(w9.einOrSsn) || "") : "",
+        // PRD-024: Full TIN, not masked — this export is consumed for actual tax
+        // filing. Endpoint is admin-gated and audit-logged above.
+        taxId: w9?.einOrSsn ? (decryptSensitive(w9.einOrSsn) || "") : "",
         legalName: w9?.fullName || profile?.displayName || "",
         address: w9?.address || "",
         city: w9?.city || "",
@@ -1785,6 +1787,15 @@ export async function registerRoutes(
     if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
+    // PRD-024: Audit log — this endpoint returns full, unmasked TINs.
+    storage.createSecurityLog({
+      userId: req.userId!,
+      action: "1099_forms_accessed",
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent") || "",
+      details: JSON.stringify({ year: getQueryParam(req.query, "year") }),
+      requestId: req.requestId || null,
+    });
     const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear() - 1;
     const forms = generate1099Forms(year);
     res.json(forms.map((f) => generate1099NECData(f)));
@@ -1794,6 +1805,15 @@ export async function registerRoutes(
     if (!req.userId || !storage.getUser(req.userId)?.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
+    // PRD-024: Audit log — this endpoint returns full, unmasked TINs.
+    storage.createSecurityLog({
+      userId: req.userId!,
+      action: "1099_export_accessed",
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent") || "",
+      details: JSON.stringify({ year: getQueryParam(req.query, "year") }),
+      requestId: req.requestId || null,
+    });
     const year = req.query.year ? getQueryParamInt(req.query, "year", new Date().getFullYear()) : new Date().getFullYear() - 1;
     const forms = generate1099Forms(year);
     const exportData = forms.map((f) => generate1099NECData(f));

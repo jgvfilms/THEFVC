@@ -6,7 +6,7 @@
  */
 
 import { storage } from "../storage";
-import { decryptSensitive, maskTaxId } from "../lib/encryption";
+import { decryptSensitive } from "../lib/encryption";
 import type { Payment, W9Form, Profile } from "@shared/schema";
 
 export interface Form1099 {
@@ -107,7 +107,10 @@ export function generate1099Forms(year: number): Form1099[] {
     forms.push({
       taxYear: year,
       recipientName: w9.fullName || profile?.displayName || "",
-      recipientTIN: w9.einOrSsn ? maskTaxId(decryptSensitive(w9.einOrSsn) || "") : "",
+      // PRD-024: Full TIN required — this feeds actual IRS 1099-NEC filing data,
+      // not a UI display. Callers are admin-gated and audit-logged (see routes.ts).
+      // Do not mask here; mask only in human-facing display endpoints.
+      recipientTIN: w9.einOrSsn ? (decryptSensitive(w9.einOrSsn) || "") : "",
       recipientAddress: w9.address || "",
       recipientCity: w9.city || "",
       recipientState: w9.state || "",
