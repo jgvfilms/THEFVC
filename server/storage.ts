@@ -30,7 +30,7 @@ import type {
   W9Form, InsertW9Form,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, and, like, or, desc, sql, gte, lt, getTableColumns } from "drizzle-orm";
+import { eq, and, or, desc, sql, gte, lt, getTableColumns } from "drizzle-orm";
 import { sqlite } from "./migrate";
 import { decryptSensitive } from "./lib/encryption";
 
@@ -266,14 +266,21 @@ export class DatabaseStorage implements IStorage {
     let query = db.select().from(profiles).$dynamic();
     const conditions = [eq(profiles.isPublic, true)];
 
-    // Helper: escape LIKE wildcards to prevent wildcard injection
+    // Helper: escape LIKE wildcards to prevent wildcard injection.
+    // NOTE: this backslash only means anything to SQLite because every
+    // like() below is a raw `sql` template with an explicit ESCAPE '\'
+    // clause — Drizzle's like() helper has no escape option (0.45.2), and
+    // without that clause SQLite treats the backslash as a literal
+    // character, so escaped patterns silently match nothing.
     const escapeLike = (str: string) => str.replace(/[%_]/g, (m) => `\\${m}`);
 
     if (opts.role) {
-      conditions.push(like(profiles.role, `%${escapeLike(opts.role)}%`));
+      const pattern = `%${escapeLike(opts.role)}%`;
+      conditions.push(sql`${profiles.role} LIKE ${pattern} ESCAPE '\\'`);
     }
     if (opts.city) {
-      conditions.push(like(profiles.city, `%${escapeLike(opts.city)}%`));
+      const pattern = `%${escapeLike(opts.city)}%`;
+      conditions.push(sql`${profiles.city} LIKE ${pattern} ESCAPE '\\'`);
     }
     if (opts.availability) {
       conditions.push(eq(profiles.availability, opts.availability));
@@ -282,7 +289,8 @@ export class DatabaseStorage implements IStorage {
     query = query.where(and(...conditions));
 
     if (opts.skill) {
-      query = query.where(like(profiles.skills, `%${escapeLike(opts.skill)}%`));
+      const pattern = `%${escapeLike(opts.skill)}%`;
+      query = query.where(sql`${profiles.skills} LIKE ${pattern} ESCAPE '\\'`);
     }
 
     return query.orderBy(desc(profiles.createdAt)).limit(50).all();
@@ -730,22 +738,30 @@ export class DatabaseStorage implements IStorage {
     const limit = Math.min(opts.limit || 20, 50);
     const offset = opts.offset || 0;
 
-    // Helper: escape LIKE wildcards to prevent wildcard injection
+    // Helper: escape LIKE wildcards to prevent wildcard injection.
+    // NOTE: this backslash only means anything to SQLite because every
+    // like() below is a raw `sql` template with an explicit ESCAPE '\'
+    // clause — Drizzle's like() helper has no escape option (0.45.2), and
+    // without that clause SQLite treats the backslash as a literal
+    // character, so escaped patterns silently match nothing.
     const escapeLike = (str: string) => str.replace(/[%_]/g, (m) => `\\${m}`);
 
     const conditions = [eq(profiles.isPublic, true)];
 
     if (opts.role) {
-      conditions.push(like(profiles.role, `%${escapeLike(opts.role)}%`));
+      const pattern = `%${escapeLike(opts.role)}%`;
+      conditions.push(sql`${profiles.role} LIKE ${pattern} ESCAPE '\\'`);
     }
     if (opts.city) {
-      conditions.push(like(profiles.city, `%${escapeLike(opts.city)}%`));
+      const pattern = `%${escapeLike(opts.city)}%`;
+      conditions.push(sql`${profiles.city} LIKE ${pattern} ESCAPE '\\'`);
     }
     if (opts.availability) {
       conditions.push(eq(profiles.availability, opts.availability));
     }
     if (opts.skill) {
-      conditions.push(like(profiles.skills, `%${escapeLike(opts.skill)}%`));
+      const pattern = `%${escapeLike(opts.skill)}%`;
+      conditions.push(sql`${profiles.skills} LIKE ${pattern} ESCAPE '\\'`);
     }
 
     // Sort options
