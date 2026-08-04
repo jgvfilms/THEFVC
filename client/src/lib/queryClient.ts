@@ -35,6 +35,26 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+/**
+ * Extract the server's { error: "..." } message from an Error thrown by
+ * apiRequest/apiRequestJson. Their message is `${status}: ${body}` (see
+ * throwIfResNotOk above), so a plain JSON.parse(err.message) always throws
+ * on the "<status>: " prefix and silently falls through to the caller's
+ * fallback — meaning every failure (wrong password, rate-limited, blocked,
+ * server error) looked identical to the user regardless of what actually
+ * went wrong. Strip the prefix before parsing.
+ */
+export function parseApiErrorMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : "";
+  const body = raw.replace(/^\d+:\s*/, "");
+  try {
+    const parsed = JSON.parse(body || "{}");
+    return typeof parsed?.error === "string" ? parsed.error : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function apiRequest(
   method: string,
   url: string,

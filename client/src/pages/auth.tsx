@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { apiRequestJson } from "@/lib/queryClient";
+import { apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
 
 const ROLES = [
   "Director", "Producer", "Director of Photography", "Camera Operator", "1st AC", "2nd AC",
@@ -100,15 +100,11 @@ export function AuthPage() {
       toast({ title: mode === "signup" ? "Account created" : "Welcome back" });
       window.location.hash = "#/app";
     } catch (err: any) {
-      let msg = "Authentication failed";
-      try {
-        const errData = JSON.parse(err?.message || "{}");
-        msg = errData?.error || msg;
-        if (errData?.error?.includes("invite-only")) {
-          setMode("request");
-          msg = "Beta access required. Submit a request below.";
-        }
-      } catch {}
+      let msg = parseApiErrorMessage(err, "Authentication failed");
+      if (msg.includes("invite-only")) {
+        setMode("request");
+        msg = "Beta access required. Submit a request below.";
+      }
       toast({ title: msg, variant: "destructive" });
     } finally {
       setLoading(false);
@@ -129,11 +125,7 @@ export function AuthPage() {
       setReqSubmitted(true);
       toast({ title: "Request submitted!", description: "We'll email you when beta access opens up." });
     } catch (err: any) {
-      let msg = "Failed to submit request";
-      try {
-        const errData = JSON.parse(err?.message || "{}");
-        msg = errData?.error || msg;
-      } catch {}
+      const msg = parseApiErrorMessage(err, "Failed to submit request");
       toast({ title: msg, variant: "destructive" });
     } finally {
       setLoading(false);
