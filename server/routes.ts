@@ -234,6 +234,24 @@ export async function registerRoutes(
     res.json(results);
   });
 
+  // ===== PRD-006: Crew Finder Pagination Endpoint =====
+  // Must be registered before /api/profiles/:handle — otherwise Express
+  // matches "paginated" as the :handle param and this route never fires.
+  app.get("/api/profiles/paginated", async (req: AuthedRequest, res: Response) => {
+    const opts = {
+      role: getQueryParam(req.query, "role") as string | undefined,
+      city: getQueryParam(req.query, "city") as string | undefined,
+      skill: getQueryParam(req.query, "skill") as string | undefined,
+      availability: getQueryParam(req.query, "availability") as string | undefined,
+      sortBy: getQueryParam(req.query, "sortBy") as string | undefined,
+      sortDir: getQueryParam(req.query, "sortDir") as string | undefined,
+      limit: getQueryParam(req.query, "limit") ? getQueryParamInt(req.query, "limit", 50) : undefined,
+      offset: getQueryParam(req.query, "offset") ? getQueryParamInt(req.query, "offset", 0) : undefined,
+    };
+    const result = storage.searchProfilesPaginated(opts);
+    res.json(result);
+  });
+
   app.get("/api/profiles/:handle", async (req: AuthedRequest, res: Response) => {
     const profile = storage.getProfileByHandle(String(req.params.handle));
     if (!profile) {
@@ -1211,22 +1229,6 @@ export async function registerRoutes(
     } catch (err) {
       res.status(500).json({ error: "Failed to delete notification" });
     }
-  });
-
-  // ===== PRD-006: Crew Finder Pagination Endpoint =====
-  app.get("/api/profiles/paginated", async (req: AuthedRequest, res: Response) => {
-    const opts = {
-      role: getQueryParam(req.query, "role") as string | undefined,
-      city: getQueryParam(req.query, "city") as string | undefined,
-      skill: getQueryParam(req.query, "skill") as string | undefined,
-      availability: getQueryParam(req.query, "availability") as string | undefined,
-      sortBy: getQueryParam(req.query, "sortBy") as string | undefined,
-      sortDir: getQueryParam(req.query, "sortDir") as string | undefined,
-      limit: getQueryParam(req.query, "limit") ? getQueryParamInt(req.query, "limit", 50) : undefined,
-      offset: getQueryParam(req.query, "offset") ? getQueryParamInt(req.query, "offset", 0) : undefined,
-    };
-    const result = storage.searchProfilesPaginated(opts);
-    res.json(result);
   });
 
   // ===== PRD-007: Payments & Monetization =====
