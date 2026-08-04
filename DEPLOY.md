@@ -55,7 +55,27 @@ the full list):
 | `PAYER_TIN` | Real EIN if you want 1099 generation to work; leave blank to test everything else first |
 | `DATABASE_PATH` | `/data/thefvc.db` (from Step 3) |
 | `RATE_LIMIT_DIR` | `/data` — same volume as above, or rate-limit state resets on every redeploy |
+| `TRUSTED_PROXY_HOPS` | **`2` on Railway.** Must match the real proxy depth or rate limiting breaks *silently* — see below |
 | `NODE_ENV` | `production` |
+
+### Why `TRUSTED_PROXY_HOPS=2` matters on Railway
+
+The app derives the client IP from the trailing entries of `X-Forwarded-For`,
+trusting only the last N that its own proxies appended. The code default is `1`
+(a single nginx-style reverse proxy). Railway puts **two** hops in front of the
+app, so with the default the app keys rate limits on Railway's *edge* address
+rather than the caller's.
+
+That fails silently and completely: Railway's edge fleet rotates, so counts
+scatter across many edge IPs and never reach the threshold. Measured in
+production — 22 consecutive bad logins spread across 7 edge IPs and never
+tripped a limit of 10. Worse, any block that *did* fire would target Railway
+infrastructure rather than a user.
+
+Don't guess this value for a new host. Make a request, then look at which key
+appears in `$RATE_LIMIT_DIR/.rate-limits.json`; it must be the real client IP.
+Setting it too high is its own hole — the app would start reading
+client-supplied `X-Forwarded-For` values, letting callers spoof their identity.
 | `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_CLIENT_ID` | Use **test-mode** Stripe keys for now — leave blank if you're not testing payments yet |
 
 ## Step 5 — Deploy

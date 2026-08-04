@@ -168,10 +168,32 @@ export function rateLimit(opts: RateLimitOptions) {
  * IP-block purposes in both directions: rotate a fake IP each request to
  * dodge the limit, or forge a victim's real IP to get *them* auto-blocked.
  *
- * TRUSTED_PROXY_HOPS (default 1) should match the actual deployment
- * topology — 1 for a single nginx reverse proxy in front of the app, per
- * the deployment docs. Only the last N entries in the chain were appended
- * by proxies you control; anything before that came from the client.
+ * TRUSTED_PROXY_HOPS must match the ACTUAL deployment topology — only the
+ * last N entries in the chain were appended by proxies you control;
+ * anything before that came from the client. Deliberately left an env var
+ * rather than a constant: the right value is a property of whatever host
+ * you're on today, not of this code.
+ *
+ * Getting it wrong fails silently and badly in BOTH directions:
+ *  - too low  → you key on a proxy's address instead of the client's. On a
+ *    host whose edge fleet rotates (Railway), counts scatter across edge
+ *    IPs, never reach the threshold, and rate limiting/IP blocking simply
+ *    stop working. Any block that does fire targets infrastructure, not a
+ *    user. Verified in production: with hops=1 on Railway, 22 consecutive
+ *    bad logins spread across 7 different edge IPs and never tripped the
+ *    limit of 10.
+ *  - too high → the index walks past the trusted suffix into client-
+ *    supplied values, so a requester can spoof their identity: rotate a
+ *    fake IP each request to dodge the limit, or forge someone else's to
+ *    get them blocked.
+ *
+ * How to determine it for a new host: send a request, then check which key
+ * appears in the rate-limit store (RATE_LIMIT_DIR/.rate-limits.json). If
+ * it isn't the real client address, increment and retry. Known values:
+ *   Railway  = 2  (client, then Railway's edge)
+ *   Single nginx reverse proxy = 1
+ * Default stays 1 — the conservative choice, since too-low degrades
+ * enforcement while too-high is exploitable. Set it explicitly per host.
  */
 const TRUSTED_PROXY_HOPS = parseInt(process.env.TRUSTED_PROXY_HOPS || "1", 10);
 
