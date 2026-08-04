@@ -3,7 +3,7 @@
  * Basic health check endpoint for operational visibility.
  */
 import { sqlite } from "../migrate";
-import { execSync } from "node:child_process";
+import { statfsSync } from "node:fs";
 
 interface HealthCheck {
   status: "healthy" | "degraded" | "unhealthy";
@@ -43,9 +43,13 @@ async function checkDatabase(): Promise<{ status: string; latencyMs: number }> {
 
 function checkDisk(): { status: string; freeGB: number } {
   try {
-    const output = execSync("df -BG / | tail -1 | awk '{print $4}'", { encoding: "utf8" }).trim();
-    const freeGB = parseInt(output) || 0;
-    return { status: freeGB > 1 ? "healthy" : freeGB > 0 ? "degraded" : "unhealthy", freeGB };
+    // fs.statfsSync is cross-platform (unlike shelling out to `df`, whose
+    // flags differ between GNU/Linux and BSD/macOS — `df -BG` is GNU-only
+    // and errors out on macOS, silently degrading this check).
+    const stats = statfsSync(process.cwd());
+    const freeGB = (stats.bavail * stats.bsize) / 1024 ** 3;
+    const freeGBRounded = Math.floor(freeGB);
+    return { status: freeGB > 1 ? "healthy" : freeGB > 0 ? "degraded" : "unhealthy", freeGB: freeGBRounded };
   } catch {
     return { status: "unknown", freeGB: -1 };
   }

@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { log } from "../index";
+import { log } from "../lib/logger";
 import { processEmailQueue } from "../email/queue";
 import { cleanupExpiredBlocks } from "../middleware/rateLimit";
 
