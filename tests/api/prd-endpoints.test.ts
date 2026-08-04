@@ -11,6 +11,27 @@ import { createTestServer, getTestCredentials } from "../server";
 import { storage, db } from "../../server/storage";
 import { hashPassword } from "../../server/middleware/auth";
 
+// Several describe blocks below independently create a user with the fixed
+// getTestCredentials() email — without cleanup between them, the second one
+// hits a UNIQUE constraint on users.email. Truncate before every test, same
+// as tests/api/routes.test.ts does, so each test starts from a clean slate.
+beforeEach(() => {
+  try {
+    const tables = [
+      "activity_feed", "feed_posts", "beta_feedback", "beta_requests",
+      "beta_invites", "password_resets", "email_verifications",
+      "security_audit_log", "analytics_events", "email_queue",
+      "blocked_ips", "news_cache", "production_crew", "credits",
+      "productions", "profiles", "sessions", "users",
+    ];
+    for (const t of tables) {
+      db.run(`DELETE FROM ${t}`);
+    }
+  } catch {
+    // Table might not exist yet — ignore
+  }
+});
+
 describe("PRD-018: Security — Health Check", () => {
   let server: Awaited<ReturnType<typeof createTestServer>>;
   let baseUrl: string;

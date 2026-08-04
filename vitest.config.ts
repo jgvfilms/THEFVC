@@ -30,7 +30,22 @@ export default defineConfig({
       "build",
       "tests/e2e/**", // Playwright handles E2E separately
     ],
-    setupFiles: ["./tests/setup.ts"],
+    // Throwaway secret so server/lib/encryption.ts (imported transitively by
+    // every server test via server/migrate.ts) doesn't throw on a fresh
+    // checkout. Never used for real data — see tests/db-setup.ts for the
+    // rest of the self-bootstrapping (schema + per-file DATABASE_PATH).
+    env: {
+      ENCRYPTION_KEY: "0".repeat(64),
+    },
+    // tests/db-setup.ts must run first: it sets DATABASE_PATH and bootstraps
+    // the schema before the test file's own imports (e.g. tests/server.ts ->
+    // server/migrate.ts) run against it.
+    setupFiles: ["./tests/db-setup.ts", "./tests/setup.ts"],
+    // Test files each get their own SQLite DB (tests/db-setup.ts) and truncate
+    // their tables in beforeEach, but that isolation relies on Vitest's default
+    // per-file module isolation. Keep file execution serialized so behavior
+    // stays deterministic rather than depending on worker-pool scheduling.
+    fileParallelism: false,
     coverage: {
       provider: "istanbul",
       reporter: ["text", "json", "lcov"],
