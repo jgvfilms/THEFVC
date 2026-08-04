@@ -18,6 +18,16 @@ import { securityHeaders } from "../server/middleware/securityHeaders";
 import { sanitize } from "../server/middleware/sanitize";
 import { rateLimit } from "../server/middleware/rateLimit";
 
+// Relax auth rate limits for integration tests. The suite legitimately makes
+// far more auth calls than a real user — routes.test.ts alone logs in 13+
+// times as per-test setup, against a production limit of 10 per window — so
+// without this, the limiter trips partway through a run and later tests fail
+// for reasons unrelated to what they assert. Production is unaffected: the
+// multiplier defaults to 1 when this env var is unset.
+// A test that specifically needs the real strict limits (see
+// tests/api/rate-limit-scope.test.ts) sets this back to "1" for its duration.
+process.env.RATE_LIMIT_MAX_MULTIPLIER = process.env.RATE_LIMIT_MAX_MULTIPLIER || "100";
+
 // Ensure migrations run against the test DB
 import "../server/migrate";
 

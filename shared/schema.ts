@@ -392,6 +392,11 @@ export const blockedIps = sqliteTable("blocked_ips", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ipAddress: text("ip_address").notNull().unique(),
   reason: text("reason").notNull(), // rate_limit_abuse, brute_force, suspicious_activity, manual
+  // Route group this block applies to (e.g. "auth"). Null = blocks every
+  // route, same as the historical behavior. ip_address stays UNIQUE, so
+  // only one active block can exist per IP at a time regardless of scope —
+  // matches the existing (pre-scope) constraint, not a new limitation.
+  scope: text("scope"),
   blockedBy: integer("blocked_by").references(() => users.id),
   blockedAt: integer("blocked_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   expiresAt: integer("expires_at", { mode: "timestamp" }), // null = permanent

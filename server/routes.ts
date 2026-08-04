@@ -60,10 +60,16 @@ export async function registerRoutes(
   app.use("/api/w9", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "w9" }));
   app.use("/api/stripe", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "stripe" }));
   app.use("/api/admin/tax-export", rateLimit({ windowMs: 60 * 1000, max: 10, identifier: "tax-export" }));
-  // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force
-  app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login" }));
-  app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup" }));
-  app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset" }));
+  // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
+  // scope: "auth" means exceeding any one of these only blocks these three —
+  // not payments, browsing, or anything else on the API. blockDurationMs is
+  // shorter than the default (1h): 15 min, matching the window itself, so a
+  // legitimate user who fumbles a password a few times isn't locked out of
+  // their own account for an hour, while still meaningfully slowing brute force.
+  const AUTH_BLOCK_DURATION_MS = 15 * 60 * 1000;
+  app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
+  app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
+  app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
 
   // PRD-023v2: Health check endpoint (public, no auth required)
   app.get("/api/health", async (_req, res) => {

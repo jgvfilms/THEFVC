@@ -43,6 +43,10 @@ const USER_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "last_login_at", def: "INTEGER" },
 ];
 
+const BLOCKED_IPS_COLUMNS: Array<{ name: string; def: string }> = [
+  { name: "scope", def: "TEXT" },
+];
+
 const NEW_TABLES = [
   `CREATE TABLE IF NOT EXISTS beta_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +170,7 @@ const NEW_TABLES = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip_address TEXT NOT NULL UNIQUE,
     reason TEXT NOT NULL,
+    scope TEXT,
     blocked_by INTEGER REFERENCES users(id),
     blocked_at INTEGER NOT NULL,
     expires_at INTEGER,
@@ -262,6 +267,18 @@ export function runMigrations() {
   // New tables
   for (const sql of NEW_TABLES) {
     sqlite.exec(sql);
+  }
+
+  // blocked_ips columns (table itself created above via NEW_TABLES, but
+  // CREATE TABLE IF NOT EXISTS is a no-op on an already-existing table, so
+  // new columns on it still need the same idempotent ALTER TABLE pattern)
+  const blockedIpsCols = sqlite.prepare("PRAGMA table_info(blocked_ips)").all() as Array<{ name: string }>;
+  const blockedIpsExisting = new Set(blockedIpsCols.map((c) => c.name));
+  for (const col of BLOCKED_IPS_COLUMNS) {
+    if (!blockedIpsExisting.has(col.name)) {
+      sqlite.exec(`ALTER TABLE blocked_ips ADD COLUMN ${col.name} ${col.def}`);
+      console.log(`[migration] Added column blocked_ips.${col.name}`);
+    }
   }
 
   // PRD-018: Add indexes for performance on frequently queried columns
