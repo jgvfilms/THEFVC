@@ -179,7 +179,7 @@ describe("CrewFinder", () => {
     render(<CrewFinder />);
 
     expect(screen.getByText("Crew Finder")).toBeInTheDocument();
-    expect(screen.getByText("Find verified crew by role, location, and skills.")).toBeInTheDocument();
+    expect(screen.getByText("Find verified crew by role, location, skills, and availability.")).toBeInTheDocument();
     expect(screen.getByTestId("input-search-city")).toBeInTheDocument();
     expect(screen.getByTestId("select-role-filter")).toBeInTheDocument();
   });
@@ -195,7 +195,7 @@ describe("CrewFinder", () => {
   });
 
   it("should render empty state when no profiles match", () => {
-    (useQuery as any).mockReturnValue({ data: [], isLoading: false });
+    (useQuery as any).mockReturnValue({ data: { profiles: [], total: 0 }, isLoading: false });
 
     render(<CrewFinder />);
 
@@ -218,7 +218,10 @@ describe("CrewFinder", () => {
       },
     ];
 
-    (useQuery as any).mockReturnValue({ data: mockProfiles, isLoading: false });
+    (useQuery as any).mockReturnValue({
+      data: { profiles: mockProfiles, total: mockProfiles.length },
+      isLoading: false,
+    });
 
     render(<CrewFinder />);
 

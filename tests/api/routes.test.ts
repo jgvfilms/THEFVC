@@ -309,6 +309,17 @@ describe("API Integration Tests", () => {
         email: creds.email,
         passwordHash: hashPassword(creds.password),
       });
+      // The route returns storage.getProfile(user.id) alongside the user —
+      // a real signup always creates a profile too, so mirror that here.
+      storage.createProfile({
+        userId: user.id,
+        displayName: creds.displayName,
+        role: creds.role,
+        avatarInitials: creds.displayName.slice(0, 2).toUpperCase(),
+        skills: "[]",
+        isPublic: true,
+        availability: "available",
+      });
 
       const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
         method: "POST",
@@ -639,7 +650,8 @@ describe("API Integration Tests", () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.json()).resolves.toMatchObject({ error: "too long" });
+      const body = await res.json();
+      expect(body.error).toContain("too long");
     });
 
     it("should create post with valid data", async () => {
