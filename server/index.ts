@@ -60,6 +60,30 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100, identifier: "global" }))
 // Start background job scheduler
 startJobScheduler();
 
+// Fields that must never reach the application log.
+//
+// hostedInvoiceUrl / invoicePdfUrl are UNAUTHENTICATED Stripe pay links —
+// anyone holding the URL can view and pay the invoice, so they're treated as
+// credentials, not identifiers. The rest are PII or secrets that have no
+// business being echoed into a response log.
+const REDACTED_LOG_FIELDS = new Set([
+  "hostedInvoiceUrl",
+  "invoicePdfUrl",
+  "recipientEmail",
+  "passwordHash",
+  "token",
+  "clientSecret",
+  "client_secret",
+  "einOrSsn",
+  "stripeCustomerId",
+  "stripeInvoiceId",
+  "stripeAccountId",
+]);
+
+function redactSensitive(key: string, value: unknown) {
+  return REDACTED_LOG_FIELDS.has(key) && value ? "[redacted]" : value;
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -76,7 +100,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse, redactSensitive)}`;
       }
 
       log(logLine);

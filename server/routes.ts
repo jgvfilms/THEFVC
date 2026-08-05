@@ -24,6 +24,7 @@ import { encryptSensitive, decryptSensitive, maskTaxId, isValidTaxId } from "./l
 import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, stripe } from "./lib/stripe";
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
+import { registerInvoiceRoutes } from "./invoice-routes";
 import { Stripe } from "stripe";
 
 // ===== AUTH HELPERS (re-exported from middleware/auth.ts) =====
@@ -68,6 +69,9 @@ export async function registerRoutes(
   app.use("/api/w9", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "w9" }));
   app.use("/api/stripe", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "stripe" }));
   app.use("/api/admin/tax-export", rateLimit({ windowMs: 60 * 1000, max: 10, identifier: "tax-export" }));
+
+  // Invoicing (admin CRUD + member read-only)
+  registerInvoiceRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —
   // not payments, browsing, or anything else on the API. blockDurationMs is

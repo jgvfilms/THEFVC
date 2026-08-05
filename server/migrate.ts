@@ -241,6 +241,84 @@ const NEW_TABLES = [
     submitted_at INTEGER NOT NULL,
     verified_at INTEGER
   )`,
+  // ===== INVOICING =====
+  `CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id TEXT NOT NULL UNIQUE,
+    stripe_invoice_id TEXT UNIQUE,
+    stripe_customer_id TEXT,
+    issuer_user_id INTEGER REFERENCES users(id),
+    recipient_user_id INTEGER NOT NULL REFERENCES users(id),
+    recipient_email TEXT NOT NULL,
+    recipient_name TEXT NOT NULL,
+    production_id INTEGER REFERENCES productions(id),
+    status TEXT NOT NULL DEFAULT 'draft',
+    currency TEXT NOT NULL DEFAULT 'usd',
+    subtotal_cents INTEGER NOT NULL DEFAULT 0,
+    total_cents INTEGER NOT NULL DEFAULT 0,
+    amount_paid_cents INTEGER NOT NULL DEFAULT 0,
+    amount_due_cents INTEGER NOT NULL DEFAULT 0,
+    due_date INTEGER,
+    issued_at INTEGER,
+    paid_at INTEGER,
+    voided_at INTEGER,
+    hosted_invoice_url TEXT,
+    invoice_pdf_url TEXT,
+    memo TEXT,
+    internal_note TEXT,
+    reminders_enabled INTEGER NOT NULL DEFAULT 1,
+    reminder_profile TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_line_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    stripe_invoice_item_id TEXT,
+    description TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_amount_cents INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    offset_days INTEGER NOT NULL,
+    send_at INTEGER NOT NULL,
+    tone TEXT NOT NULL DEFAULT 'neutral',
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at INTEGER,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(invoice_id, offset_days)
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    actor_id INTEGER REFERENCES users(id),
+    payload TEXT DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at INTEGER NOT NULL,
+    processed_at INTEGER,
+    error TEXT
+  )`,
+];
+
+const INDEXES = [
+  `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_recipient ON invoices(recipient_user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices(due_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_line_items_invoice ON invoice_line_items(invoice_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_reminders_pending ON invoice_reminders(status, send_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_events_invoice ON invoice_events(invoice_id, created_at)`,
 ];
 
 export function runMigrations() {
@@ -266,6 +344,11 @@ export function runMigrations() {
 
   // New tables
   for (const sql of NEW_TABLES) {
+    sqlite.exec(sql);
+  }
+
+  // Indexes (after tables exist)
+  for (const sql of INDEXES) {
     sqlite.exec(sql);
   }
 
