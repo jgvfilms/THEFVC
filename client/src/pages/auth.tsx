@@ -183,7 +183,7 @@ export function AuthPage() {
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" data-testid="input-email" />
+                  <Input id="email" type="email" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-email" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
@@ -235,7 +235,7 @@ export function AuthPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" data-testid="input-email" />
+                  <Input id="email" type="email" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-email" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>

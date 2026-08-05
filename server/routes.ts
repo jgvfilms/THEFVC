@@ -81,7 +81,8 @@ export async function registerRoutes(
   // ----- AUTH -----
   app.post("/api/auth/signup", async (req: AuthedRequest, res: Response) => {
     try {
-      const { handle, email, password, displayName, role, inviteToken } = req.body;
+      const { handle, password, displayName, role, inviteToken } = req.body;
+      const email = String(req.body.email || "").trim().toLowerCase();
 
       if (!handle || !email || !password) {
         return res.status(400).json({ error: "Handle, email, and password are required" });
@@ -172,7 +173,8 @@ export async function registerRoutes(
 
   app.post("/api/auth/login", async (req: AuthedRequest, res: Response) => {
     try {
-      const { email, password } = req.body;
+      const { password } = req.body;
+      const email = String(req.body.email || "").trim().toLowerCase();
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password required" });
       }
@@ -988,7 +990,7 @@ export async function registerRoutes(
   // Password reset request
   app.post("/api/auth/password-reset/request", async (req: Request, res: Response) => {
     try {
-      const { email } = req.body;
+      const email = String(req.body.email || "").trim().toLowerCase();
       if (!email) {
         return res.status(400).json({ error: "Email is required" });
       }
