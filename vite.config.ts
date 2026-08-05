@@ -12,7 +12,10 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
-  base: "./",
+  // Absolute base: routing now uses real URL paths (not hash), so nested
+  // routes like /app/productions/123 need asset URLs resolved from root,
+  // not from the current path segment.
+  base: "/",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,

@@ -449,7 +449,7 @@ export function PublicProfile() {
       {/* CTA */}
       <div className="mt-6 text-center">
         <p className="text-xs text-muted-foreground">
-          Claimed at <span className="font-mono" style={{ color: theme.accent }}>thefvc.is/@{handle}</span>
+          Claimed at <span className="font-mono" style={{ color: theme.accent }}>thefvc.is/{handle}</span>
         </p>
       </div>
     </div>

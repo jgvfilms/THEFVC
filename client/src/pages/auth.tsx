@@ -18,11 +18,11 @@ const ROLES = [
 export function AuthPage() {
   const { login, signup } = useAuth();
   const { toast } = useToast();
-  const [location] = useLocation();
+  const [, navigate] = useLocation();
   const [mode, setMode] = useState<"login" | "signup" | "request">("login");
   const [loading, setLoading] = useState(false);
 
-  // Invite token from URL query param (hash-based routing)
+  // Invite token from URL query param
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteData, setInviteData] = useState<{ email?: string; displayName?: string; role?: string } | null>(null);
   const [inviteChecked, setInviteChecked] = useState(false);
@@ -42,10 +42,9 @@ export function AuthPage() {
   const [reqMessage, setReqMessage] = useState("");
   const [reqSubmitted, setReqSubmitted] = useState(false);
 
-  // Parse invite token from URL hash query
+  // Parse invite token from the URL query string
   useEffect(() => {
-    const hash = window.location.hash;
-    const params = new URLSearchParams(hash.split("?")[1] || "");
+    const params = new URLSearchParams(window.location.search);
     const token = params.get("invite");
     if (token) {
       setInviteToken(token);
@@ -70,7 +69,7 @@ export function AuthPage() {
     } else {
       setInviteChecked(true);
     }
-  }, [location]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +97,7 @@ export function AuthPage() {
         await login(email, password);
       }
       toast({ title: mode === "signup" ? "Account created" : "Welcome back" });
-      window.location.hash = "#/app";
+      navigate("/app");
     } catch (err: any) {
       let msg = parseApiErrorMessage(err, "Authentication failed");
       if (msg.includes("invite-only")) {

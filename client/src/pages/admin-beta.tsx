@@ -51,7 +51,7 @@ export function AdminBetaPage() {
     onSuccess: (data: any) => {
       toast({ title: "Request approved", description: "Invite link generated" });
       if (data.inviteUrl) {
-        setLastInviteUrl(`${window.location.origin}/${data.inviteUrl}`);
+        setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
@@ -76,7 +76,7 @@ export function AdminBetaPage() {
     onSuccess: (data: any) => {
       toast({ title: "Invite created", description: "Copy the link to share" });
       if (data.inviteUrl) {
-        setLastInviteUrl(`${window.location.origin}/${data.inviteUrl}`);
+        setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }
       setInviteEmail(""); setInviteName(""); setInviteRole(""); setInviteNotes("");
       setShowInviteForm(false);
@@ -301,7 +301,7 @@ export function AdminBetaPage() {
             <p className="py-8 text-center text-sm text-muted-foreground">No invites yet</p>
           ) : (
             data.allInvites.map(inv => {
-              const url = `${window.location.origin}/#/auth?invite=${inv.token}`;
+              const url = `${window.location.origin}/auth?invite=${inv.token}`;
               return (
                 <div key={inv.id} className="rounded-lg border border-border bg-card p-3" data-testid={`invite-${inv.id}`}>
                   <div className="flex items-center justify-between gap-2">

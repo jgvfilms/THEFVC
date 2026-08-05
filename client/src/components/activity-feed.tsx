@@ -273,7 +273,7 @@ export function ActivityFeed({ publicMode = false }: { publicMode?: boolean }) {
                     {publicMode ? (
                       <span className="font-medium text-sm" data-testid={`feed-name-${i}`}>{name}</span>
                     ) : (
-                      <Link href={`/u/${item.user?.handle}`}>
+                      <Link href={`/${item.user?.handle}`}>
                         <span className="font-medium text-sm hover:text-primary cursor-pointer" data-testid={`feed-name-${i}`}>
                           {name}
                         </span>
@@ -307,7 +307,7 @@ export function ActivityFeed({ publicMode = false }: { publicMode?: boolean }) {
                               Say hello when they’re online
                             </span>
                           ) : (
-                            <Link href={`/u/${item.user?.handle}`}>
+                            <Link href={`/${item.user?.handle}`}>
                               <span className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer" data-testid={`feed-hello-${i}`}>
                                 <Heart className="h-3 w-3" />
                                 Say hello · Connect with {name.split(" ")[0]}

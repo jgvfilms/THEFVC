@@ -22,7 +22,7 @@ export function FeedbackButton({ user }: FeedbackButtonProps) {
       userId: user?.id,
       category,
       message,
-      pageUrl: window.location.hash,
+      pageUrl: window.location.pathname,
     }),
     onSuccess: () => {
       toast({ title: "Feedback sent", description: "Thanks for helping us improve!" });

@@ -32,6 +32,14 @@ import { Stripe } from "stripe";
 
 const BETA_SEAT_LIMIT = 50;
 
+// Handles are served as bare top-level URLs (thefvc.is/<handle>), so they can't
+// collide with the app's own routes or shadow them.
+const RESERVED_HANDLES = new Set([
+  "auth", "app", "crew", "u", "api", "uploads", "admin",
+  "reset-password", "verify-email", "w9", "payments",
+]);
+const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
+
 // Helper: safely extract a string query param (Express returns string | string[] | undefined)
 const getQueryParam = (query: any, key: string): string | undefined => {
   const val = query[key];
@@ -86,6 +94,9 @@ export async function registerRoutes(
 
       if (!handle || !email || !password) {
         return res.status(400).json({ error: "Handle, email, and password are required" });
+      }
+      if (!HANDLE_PATTERN.test(handle) || RESERVED_HANDLES.has(handle)) {
+        return res.status(400).json({ error: "Handle must be 2-30 characters: lowercase letters, numbers, hyphens, or underscores, and not a reserved word." });
       }
 
       // Beta gate: require invite token
@@ -714,7 +725,7 @@ export async function registerRoutes(
       res.json({
         success: true,
         invite,
-        inviteUrl: `#/auth?invite=${token}`,
+        inviteUrl: `/auth?invite=${token}`,
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to approve request" });
@@ -744,7 +755,7 @@ export async function registerRoutes(
         createdBy: req.userId!,
         notes,
       });
-      res.json({ success: true, invite, inviteUrl: `#/auth?invite=${token}` });
+      res.json({ success: true, invite, inviteUrl: `/auth?invite=${token}` });
     } catch (err) {
       res.status(500).json({ error: "Failed to create invite" });
     }

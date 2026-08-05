@@ -202,7 +202,7 @@ export function CrewFinder() {
           {profiles.map((p) => {
             const skills: string[] = p.skills ? JSON.parse(p.skills) : [];
             return (
-              <Link key={p.id} href={`/u/${p.handle}`}>
+              <Link key={p.id} href={`/${p.handle}`}>
                 <Card className="hover:border-primary/40 transition-colors cursor-pointer" data-testid={`card-crew-${p.id}`}>
                   <CardContent className="py-4 flex items-start gap-3">
                     <Avatar className="h-12 w-12 flex-shrink-0">
