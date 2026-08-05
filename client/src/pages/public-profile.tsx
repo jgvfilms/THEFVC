@@ -119,6 +119,13 @@ export function PublicProfile() {
     queryFn: () => apiRequestJson<ProfileWithCredits>("GET", `/api/profiles/${handle}`),
   });
 
+  // PRD-006: Public profile SEO — update meta tags on load.
+  // Must run unconditionally (before the early returns below) so hook order
+  // stays stable across renders, or React throws "rendered fewer hooks".
+  useEffect(() => {
+    if (data?.profile) setProfileMeta(data.profile);
+  }, [data]);
+
   if (isLoading) {
     return (
       <div className="max-w-2xl mx-auto py-8 space-y-4">
@@ -148,11 +155,6 @@ export function PublicProfile() {
   const videoLinks: VideoLink[] = profile.videoLinks ? JSON.parse(profile.videoLinks) : [];
   const socialLinks: Record<string, string> = profile.socialLinks ? JSON.parse(profile.socialLinks) : {};
   const theme = THEMES[profile.themePreset || "cinema_gold"] || THEMES.cinema_gold;
-
-  // PRD-006: Public profile SEO — update meta tags on load
-  useEffect(() => {
-    setProfileMeta(profile);
-  }, [profile]);
 
   return (
     <div className="max-w-2xl mx-auto py-6 space-y-0">
