@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { apiRequestJson, setAuthToken, getAuthToken } from "./queryClient";
 
 interface AuthUser {
@@ -52,7 +53,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { email, password }
     );
     setAuthToken(data.token);
-    setUser(data.user);
+    // flushSync: callers navigate() immediately after login() resolves. wouter's
+    // path-based location hook uses useSyncExternalStore, which re-renders
+    // synchronously the moment history.pushState fires. Without flushSync, that
+    // synchronous re-render can win the race against this (normally batched,
+    // deferred) setUser update, so ProtectedRoute mounts at the destination
+    // still seeing user=null and immediately bounces back to /auth — the
+    // "have to log in twice" bug. Committing user before returning guarantees
+    // the post-navigate render already has it.
+    flushSync(() => setUser(data.user));
   };
 
   const signup = async (handle: string, email: string, password: string, displayName: string, role: string, inviteToken?: string) => {
@@ -62,7 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { handle, email, password, displayName, role, inviteToken }
     );
     setAuthToken(data.token);
-    setUser(data.user);
+    // See comment in login() above — same navigate-right-after race applies here.
+    flushSync(() => setUser(data.user));
   };
 
   const logout = async () => {
