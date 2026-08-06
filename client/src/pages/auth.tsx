@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,13 @@ export function AuthPage() {
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<"login" | "signup" | "request">("login");
   const [loading, setLoading] = useState(false);
+  // `disabled={loading}` alone doesn't stop a fast double-click or Enter+click:
+  // the button only becomes disabled on the next render, and both event
+  // handlers can fire before React gets there. This ref is mutated
+  // synchronously, so the second call is rejected immediately regardless of
+  // render timing — that's what was causing two /api/auth/login submissions
+  // (two sessions, then token/session thrashing) from a single login attempt.
+  const submittingRef = useRef(false);
 
   // Invite token from URL query param
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -73,6 +80,8 @@ export function AuthPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -106,6 +115,7 @@ export function AuthPage() {
       }
       toast({ title: msg, variant: "destructive" });
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
