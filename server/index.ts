@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
-import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { startJobScheduler, stopJobScheduler } from "./jobs";
 import { securityHeaders } from "./middleware/securityHeaders";
@@ -13,6 +12,7 @@ import { sanitize } from "./middleware/sanitize";
 import { rateLimit } from "./middleware/rateLimit";
 import { log } from "./lib/logger";
 import { wss } from "./ws";
+import { UPLOADS_ROOT, PROFILE_UPLOADS_DIR } from "./lib/paths";
 
 // Import migrate to run idempotent column additions on startup
 import "./migrate";
@@ -21,13 +21,12 @@ const app = express();
 const httpServer = createServer(app);
 
 // Ensure uploads directory exists
-const uploadsDir = join(process.cwd(), "uploads", "profiles");
-if (!existsSync(uploadsDir)) {
-  mkdirSync(uploadsDir, { recursive: true });
+if (!existsSync(PROFILE_UPLOADS_DIR)) {
+  mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
 }
 
 // Serve uploaded files
-app.use("/uploads", express.static(join(process.cwd(), "uploads")));
+app.use("/uploads", express.static(UPLOADS_ROOT));
 
 declare module "http" {
   interface IncomingMessage {

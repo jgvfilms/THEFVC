@@ -1,8 +1,9 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { dirname } from "path";
 import { scryptSync, randomBytes } from "node:crypto";
 import { encryptSensitive } from "./lib/encryption";
+import { PROFILE_UPLOADS_DIR } from "./lib/paths";
 
 // Respects DATABASE_PATH so deploy targets with a mounted persistent
 // volume (e.g. Railway) can point this at a durable path. Falls back
@@ -487,9 +488,8 @@ export function runMigrations() {
   } // end else (ADMIN_EMAIL/ADMIN_PASSWORD set)
 
   // Ensure uploads directory exists
-  const uploadsDir = join(process.cwd(), "uploads", "profiles");
-  if (!existsSync(uploadsDir)) {
-    mkdirSync(uploadsDir, { recursive: true });
+  if (!existsSync(PROFILE_UPLOADS_DIR)) {
+    mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
   }
 
   // Backfill activity feed from existing data

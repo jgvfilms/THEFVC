@@ -6,8 +6,8 @@ import { eq } from "drizzle-orm";
 import { log } from "./lib/logger";
 import { broadcastToUser } from "./ws";
 import multer from "multer";
-import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
+import { PROFILE_UPLOADS_DIR } from "./lib/paths";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   hashPassword,
@@ -363,9 +363,8 @@ export async function registerRoutes(
   const upload = multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => {
-        const dir = join(process.cwd(), "uploads", "profiles");
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        if (!existsSync(PROFILE_UPLOADS_DIR)) mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
+        cb(null, PROFILE_UPLOADS_DIR);
       },
       filename: (_req, file, cb) => {
         const ext = file.originalname.split(".").pop()?.toLowerCase() || "jpg";
