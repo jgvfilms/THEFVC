@@ -42,6 +42,7 @@ const USER_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "invited_by", def: "INTEGER" },
   { name: "activated_at", def: "INTEGER" },
   { name: "last_login_at", def: "INTEGER" },
+  { name: "google_id", def: "TEXT" },
 ];
 
 const BLOCKED_IPS_COLUMNS: Array<{ name: string; def: string }> = [
@@ -320,6 +321,9 @@ const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_invoice_line_items_invoice ON invoice_line_items(invoice_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoice_reminders_pending ON invoice_reminders(status, send_at)`,
   `CREATE INDEX IF NOT EXISTS idx_invoice_events_invoice ON invoice_events(invoice_id, created_at)`,
+  // Unique so a Google account can never be linked to two FVC users. Partial,
+  // because every password-only row has google_id NULL.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`,
 ];
 
 export function runMigrations() {

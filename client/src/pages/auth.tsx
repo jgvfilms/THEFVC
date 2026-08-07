@@ -15,8 +15,47 @@ const ROLES = [
   "Wardrobe", "Makeup Artist", "Stunt Coordinator", "Actor", "Filmmaker",
 ];
 
+// Errors come back as a query param because the browser is mid-redirect from
+// Google and there's no fetch response to read a message off of.
+const OAUTH_ERRORS: Record<string, string> = {
+  google_not_configured: "Google sign-in isn't set up on this environment yet.",
+  google_denied: "Google sign-in was cancelled.",
+  google_state: "That sign-in link expired. Please try again.",
+  google_email_unverified: "Your Google account's email isn't verified.",
+  invite_required: "The beta is invite-only. Request access to join the waitlist.",
+  account_revoked: "That account's access has been revoked.",
+  google_failed: "Google sign-in failed. Please try again.",
+};
+
+function GoogleButton({ label, inviteToken }: { label: string; inviteToken: string | null }) {
+  const href = inviteToken
+    ? `/api/auth/google?invite=${encodeURIComponent(inviteToken)}`
+    : "/api/auth/google";
+  return (
+    <>
+      <div className="mt-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      {/* A plain link, not fetch: OAuth needs a full-page navigation to Google. */}
+      <Button asChild variant="outline" className="mt-4 w-full" data-testid="button-google">
+        <a href={href}>
+          <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" />
+            <path fill="#FBBC05" d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84Z" />
+            <path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.47 14.97.5 12 .5A11 11 0 0 0 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z" />
+          </svg>
+          {label}
+        </a>
+      </Button>
+    </>
+  );
+}
+
 export function AuthPage() {
-  const { login, signup } = useAuth();
+  const { login, signup, adoptToken } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<"login" | "signup" | "request">("login");
@@ -48,6 +87,32 @@ export function AuthPage() {
   const [reqCity, setReqCity] = useState("");
   const [reqMessage, setReqMessage] = useState("");
   const [reqSubmitted, setReqSubmitted] = useState(false);
+
+  // Returning from the Google redirect: either a session token in the fragment
+  // or an error code in the query string.
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get("error");
+    if (err) {
+      toast({ title: OAUTH_ERRORS[err] || "Sign-in failed", variant: "destructive" });
+      if (err === "invite_required") setMode("request");
+      history.replaceState(null, "", window.location.pathname);
+    }
+
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    if (token) {
+      // Strip it before anything can await — a session token has no business
+      // sitting in the address bar or in browser history.
+      history.replaceState(null, "", window.location.pathname);
+      setLoading(true);
+      adoptToken(token)
+        .then(() => {
+          toast({ title: "Welcome back" });
+          navigate("/app");
+        })
+        .catch(() => toast({ title: "Sign-in failed. Please try again.", variant: "destructive" }))
+        .finally(() => setLoading(false));
+    }
+  }, []);
 
   // Parse invite token from the URL query string
   useEffect(() => {
@@ -202,6 +267,8 @@ export function AuthPage() {
                   {loading ? "Loading..." : "Log in"}
                 </Button>
               </form>
+
+              <GoogleButton label="Continue with Google" inviteToken={inviteToken} />
             </>
           )}
 
@@ -254,6 +321,8 @@ export function AuthPage() {
                   {loading ? "Loading..." : "Create account"}
                 </Button>
               </form>
+
+              {inviteToken && <GoogleButton label="Sign up with Google" inviteToken={inviteToken} />}
             </>
           )}
 

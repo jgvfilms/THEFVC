@@ -8,6 +8,10 @@ export const users = sqliteTable("users", {
   handle: text("handle").notNull().unique(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  // Google's stable subject id. Present only for accounts created via / linked
+  // to Google sign-in; those rows still carry an unguessable random
+  // password_hash so the password path can never authenticate them.
+  googleId: text("google_id"),
   isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
   accessStatus: text("access_status").default("active"), // pending | active | revoked
   invitedBy: integer("invited_by"),
@@ -20,6 +24,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   handle: true,
   email: true,
   passwordHash: true,
+  googleId: true,
   isAdmin: true,
   accessStatus: true,
   invitedBy: true,

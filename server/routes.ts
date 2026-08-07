@@ -25,6 +25,14 @@ import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, str
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
+import {
+  isGoogleOAuthConfigured,
+  buildGoogleAuthUrl,
+  encodeState,
+  decodeState,
+  exchangeCodeForProfile,
+  deriveHandle,
+} from "./lib/google-oauth";
 import { Stripe } from "stripe";
 
 // ===== AUTH HELPERS (re-exported from middleware/auth.ts) =====
@@ -183,6 +191,112 @@ export async function registerRoutes(
     } catch (err) {
       log(`Signup error: ${err}`, "auth");
       res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  // ===== GOOGLE SIGN-IN =====
+  // The browser is redirected here, so failures redirect back to /auth with an
+  // error code rather than returning JSON nobody would see.
+  const authFail = (res: Response, code: string) => res.redirect(`/auth?error=${code}`);
+
+  app.get("/api/auth/google", (req: Request, res: Response) => {
+    if (!isGoogleOAuthConfigured()) return authFail(res, "google_not_configured");
+    const inviteToken = typeof req.query.invite === "string" ? req.query.invite : null;
+    res.redirect(buildGoogleAuthUrl(encodeState(inviteToken)));
+  });
+
+  app.get("/api/auth/google/callback", async (req: Request, res: Response) => {
+    try {
+      if (!isGoogleOAuthConfigured()) return authFail(res, "google_not_configured");
+      if (typeof req.query.error === "string") return authFail(res, "google_denied");
+
+      const code = typeof req.query.code === "string" ? req.query.code : "";
+      const state = decodeState(typeof req.query.state === "string" ? req.query.state : undefined);
+      if (!code || !state) return authFail(res, "google_state");
+
+      const profile = await exchangeCodeForProfile(code);
+      // An unverified Google email could belong to someone else, which would
+      // let it claim an existing FVC account by email match below.
+      if (!profile.email || !profile.emailVerified) return authFail(res, "google_email_unverified");
+
+      let user = storage.getUserByGoogleId(profile.sub);
+
+      // Existing password account with the same (verified) email: link it, so
+      // signing in with Google doesn't silently create a duplicate member.
+      if (!user) {
+        const byEmail = storage.getUserByEmail(profile.email);
+        if (byEmail) {
+          user = storage.updateUser(byEmail.id, { googleId: profile.sub }) || byEmail;
+        }
+      }
+
+      if (!user) {
+        // New member — the beta gate applies exactly as it does to signup.
+        const invite = state.inviteToken ? storage.getInviteByToken(state.inviteToken) : undefined;
+        if (!invite || invite.status !== "active" || invite.usedCount >= invite.maxUses) {
+          return authFail(res, "invite_required");
+        }
+
+        const handle = deriveHandle(
+          profile.email,
+          (h) => RESERVED_HANDLES.has(h) || !!storage.getUserByHandle(h),
+        );
+
+        user = storage.createUser({
+          handle,
+          email: profile.email,
+          // Google-only accounts still need a value here, and it must be one
+          // nobody can present at the password endpoint.
+          passwordHash: hashPassword(randomBytes(32).toString("hex")),
+          googleId: profile.sub,
+          invitedBy: invite.createdBy,
+        });
+
+        const newUsedCount = invite.usedCount + 1;
+        storage.updateInvite(invite.id, {
+          usedCount: newUsedCount,
+          status: newUsedCount >= invite.maxUses ? "used" : "active",
+          usedAt: new Date(),
+        });
+        if (invite.email) {
+          const matchedReq = storage
+            .getBetaRequests()
+            .find((r) => r.email === invite.email && r.inviteId === invite.id);
+          if (matchedReq) storage.updateBetaRequest(matchedReq.id, { status: "activated" });
+        }
+
+        const displayName = profile.name || handle;
+        storage.createProfile({
+          userId: user.id,
+          displayName,
+          role: "Filmmaker",
+          avatarInitials: displayName.slice(0, 2).toUpperCase(),
+          skills: "[]",
+          isPublic: true,
+          availability: "available",
+        });
+        storage.createActivity({
+          type: "member_joined",
+          userId: user.id,
+          targetType: "user",
+          targetId: user.id,
+          message: "just joined thefvc",
+          isPublic: true,
+        });
+      }
+
+      if (user.accessStatus === "revoked") return authFail(res, "account_revoked");
+
+      const token = generateToken();
+      storage.createSession({ token, userId: user.id, expiresAt: new Date(Date.now() + SESSION_DURATION) });
+      storage.setLastLogin(user.id);
+
+      // Fragment, not query: it never reaches the server, so the session token
+      // stays out of access logs and the Referer header.
+      res.redirect(`/auth#token=${encodeURIComponent(token)}`);
+    } catch (err) {
+      log(`Google OAuth error: ${err}`, "auth");
+      authFail(res, "google_failed");
     }
   });
 

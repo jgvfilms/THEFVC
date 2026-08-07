@@ -46,6 +46,7 @@ export interface IStorage {
   getUser(id: number): User | undefined;
   getUserByHandle(handle: string): User | undefined;
   getUserByEmail(email: string): User | undefined;
+  getUserByGoogleId(googleId: string): User | undefined;
   createUser(user: InsertUser): User;
 
   // Sessions
@@ -245,6 +246,10 @@ export class DatabaseStorage implements IStorage {
 
   getUserByEmail(email: string): User | undefined {
     return db.select().from(users).where(eq(users.email, email)).get();
+  }
+
+  getUserByGoogleId(googleId: string): User | undefined {
+    return db.select().from(users).where(eq(users.googleId, googleId)).get();
   }
 
   createUser(insertUser: InsertUser): User {

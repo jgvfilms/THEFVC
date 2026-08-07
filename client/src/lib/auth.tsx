@@ -14,6 +14,8 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Adopt a session token issued out-of-band (the Google OAuth redirect). */
+  adoptToken: (token: string) => Promise<void>;
   signup: (handle: string, email: string, password: string, displayName: string, role: string, inviteToken?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -75,6 +77,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     flushSync(() => setUser(data.user));
   };
 
+  const adoptToken = async (token: string) => {
+    setAuthToken(token);
+    try {
+      const data = await apiRequestJson<{ user: AuthUser }>("GET", "/api/auth/me");
+      if (!data?.user) throw new Error("Session token was rejected");
+      // Same navigate-right-after race as login() — see the comment there.
+      flushSync(() => setUser(data.user));
+    } catch (err) {
+      setAuthToken(null);
+      throw err;
+    }
+  };
+
   const logout = async () => {
     try {
       await apiRequestJson("POST", "/api/auth/logout");
@@ -86,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, adoptToken, logout }}>
       {children}
     </AuthContext.Provider>
   );
