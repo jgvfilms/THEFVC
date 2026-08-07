@@ -7,6 +7,7 @@ import { log } from "./lib/logger";
 import { broadcastToUser } from "./ws";
 import multer from "multer";
 import { existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import { PROFILE_UPLOADS_DIR } from "./lib/paths";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
@@ -46,6 +47,9 @@ const BETA_SEAT_LIMIT = 50;
 const RESERVED_HANDLES = new Set([
   "auth", "app", "crew", "u", "api", "uploads", "admin",
   "reset-password", "verify-email", "w9", "payments",
+  // Standalone page served at /rosarito — a member holding this handle would
+  // have a profile URL that silently resolves to the pitch page instead.
+  "rosarito",
 ]);
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 
@@ -90,6 +94,33 @@ export async function registerRoutes(
   app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
+
+  // ===== ROSARITO — standalone pitch page at /rosarito =====
+  // A self-contained HTML document, deliberately outside the SPA. It has to be
+  // registered here so it wins against the bare-handle route (/:handle) and
+  // the SPA catch-all, both of which would otherwise swallow it.
+  app.get("/rosarito", (_req: Request, res: Response) => {
+    // Built output in production; source tree under tsx in dev.
+    const built = path.resolve(__dirname, "public", "rosarito.html");
+    const file = existsSync(built)
+      ? built
+      : path.resolve(process.cwd(), "client", "public", "rosarito.html");
+
+    // The global CSP allows neither remote stylesheets nor remote fonts, which
+    // would silently drop this page to system serif — and it's a page whose
+    // whole identity is its typography. Widened here only, for this response.
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' data: https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self'; " +
+        "frame-ancestors 'none';",
+    );
+    res.sendFile(file);
+  });
 
   // PRD-023v2: Health check endpoint (public, no auth required)
   app.get("/api/health", async (_req, res) => {
