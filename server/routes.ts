@@ -6,8 +6,9 @@ import { eq } from "drizzle-orm";
 import { log } from "./lib/logger";
 import { broadcastToUser } from "./ws";
 import multer from "multer";
-import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
+import { PROFILE_UPLOADS_DIR } from "./lib/paths";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   hashPassword,
@@ -24,6 +25,15 @@ import { encryptSensitive, decryptSensitive, maskTaxId, isValidTaxId } from "./l
 import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, stripe } from "./lib/stripe";
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
+import { registerInvoiceRoutes } from "./invoice-routes";
+import {
+  isGoogleOAuthConfigured,
+  buildGoogleAuthUrl,
+  encodeState,
+  decodeState,
+  exchangeCodeForProfile,
+  deriveHandle,
+} from "./lib/google-oauth";
 import { Stripe } from "stripe";
 
 // ===== AUTH HELPERS (re-exported from middleware/auth.ts) =====
@@ -37,6 +47,9 @@ const BETA_SEAT_LIMIT = 50;
 const RESERVED_HANDLES = new Set([
   "auth", "app", "crew", "u", "api", "uploads", "admin",
   "reset-password", "verify-email", "w9", "payments",
+  // Standalone page served at /rosarito — a member holding this handle would
+  // have a profile URL that silently resolves to the pitch page instead.
+  "rosarito",
 ]);
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 
@@ -68,6 +81,9 @@ export async function registerRoutes(
   app.use("/api/w9", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "w9" }));
   app.use("/api/stripe", rateLimit({ windowMs: 60 * 1000, max: 30, identifier: "stripe" }));
   app.use("/api/admin/tax-export", rateLimit({ windowMs: 60 * 1000, max: 10, identifier: "tax-export" }));
+
+  // Invoicing (admin CRUD + member read-only)
+  registerInvoiceRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —
   // not payments, browsing, or anything else on the API. blockDurationMs is
@@ -78,6 +94,33 @@ export async function registerRoutes(
   app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
+
+  // ===== ROSARITO — standalone pitch page at /rosarito =====
+  // A self-contained HTML document, deliberately outside the SPA. It has to be
+  // registered here so it wins against the bare-handle route (/:handle) and
+  // the SPA catch-all, both of which would otherwise swallow it.
+  app.get("/rosarito", (_req: Request, res: Response) => {
+    // Built output in production; source tree under tsx in dev.
+    const built = path.resolve(__dirname, "public", "rosarito.html");
+    const file = existsSync(built)
+      ? built
+      : path.resolve(process.cwd(), "client", "public", "rosarito.html");
+
+    // The global CSP allows neither remote stylesheets nor remote fonts, which
+    // would silently drop this page to system serif — and it's a page whose
+    // whole identity is its typography. Widened here only, for this response.
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' data: https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self'; " +
+        "frame-ancestors 'none';",
+    );
+    res.sendFile(file);
+  });
 
   // PRD-023v2: Health check endpoint (public, no auth required)
   app.get("/api/health", async (_req, res) => {
@@ -179,6 +222,112 @@ export async function registerRoutes(
     } catch (err) {
       log(`Signup error: ${err}`, "auth");
       res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  // ===== GOOGLE SIGN-IN =====
+  // The browser is redirected here, so failures redirect back to /auth with an
+  // error code rather than returning JSON nobody would see.
+  const authFail = (res: Response, code: string) => res.redirect(`/auth?error=${code}`);
+
+  app.get("/api/auth/google", (req: Request, res: Response) => {
+    if (!isGoogleOAuthConfigured()) return authFail(res, "google_not_configured");
+    const inviteToken = typeof req.query.invite === "string" ? req.query.invite : null;
+    res.redirect(buildGoogleAuthUrl(encodeState(inviteToken)));
+  });
+
+  app.get("/api/auth/google/callback", async (req: Request, res: Response) => {
+    try {
+      if (!isGoogleOAuthConfigured()) return authFail(res, "google_not_configured");
+      if (typeof req.query.error === "string") return authFail(res, "google_denied");
+
+      const code = typeof req.query.code === "string" ? req.query.code : "";
+      const state = decodeState(typeof req.query.state === "string" ? req.query.state : undefined);
+      if (!code || !state) return authFail(res, "google_state");
+
+      const profile = await exchangeCodeForProfile(code);
+      // An unverified Google email could belong to someone else, which would
+      // let it claim an existing FVC account by email match below.
+      if (!profile.email || !profile.emailVerified) return authFail(res, "google_email_unverified");
+
+      let user = storage.getUserByGoogleId(profile.sub);
+
+      // Existing password account with the same (verified) email: link it, so
+      // signing in with Google doesn't silently create a duplicate member.
+      if (!user) {
+        const byEmail = storage.getUserByEmail(profile.email);
+        if (byEmail) {
+          user = storage.updateUser(byEmail.id, { googleId: profile.sub }) || byEmail;
+        }
+      }
+
+      if (!user) {
+        // New member — the beta gate applies exactly as it does to signup.
+        const invite = state.inviteToken ? storage.getInviteByToken(state.inviteToken) : undefined;
+        if (!invite || invite.status !== "active" || invite.usedCount >= invite.maxUses) {
+          return authFail(res, "invite_required");
+        }
+
+        const handle = deriveHandle(
+          profile.email,
+          (h) => RESERVED_HANDLES.has(h) || !!storage.getUserByHandle(h),
+        );
+
+        user = storage.createUser({
+          handle,
+          email: profile.email,
+          // Google-only accounts still need a value here, and it must be one
+          // nobody can present at the password endpoint.
+          passwordHash: hashPassword(randomBytes(32).toString("hex")),
+          googleId: profile.sub,
+          invitedBy: invite.createdBy,
+        });
+
+        const newUsedCount = invite.usedCount + 1;
+        storage.updateInvite(invite.id, {
+          usedCount: newUsedCount,
+          status: newUsedCount >= invite.maxUses ? "used" : "active",
+          usedAt: new Date(),
+        });
+        if (invite.email) {
+          const matchedReq = storage
+            .getBetaRequests()
+            .find((r) => r.email === invite.email && r.inviteId === invite.id);
+          if (matchedReq) storage.updateBetaRequest(matchedReq.id, { status: "activated" });
+        }
+
+        const displayName = profile.name || handle;
+        storage.createProfile({
+          userId: user.id,
+          displayName,
+          role: "Filmmaker",
+          avatarInitials: displayName.slice(0, 2).toUpperCase(),
+          skills: "[]",
+          isPublic: true,
+          availability: "available",
+        });
+        storage.createActivity({
+          type: "member_joined",
+          userId: user.id,
+          targetType: "user",
+          targetId: user.id,
+          message: "just joined thefvc",
+          isPublic: true,
+        });
+      }
+
+      if (user.accessStatus === "revoked") return authFail(res, "account_revoked");
+
+      const token = generateToken();
+      storage.createSession({ token, userId: user.id, expiresAt: new Date(Date.now() + SESSION_DURATION) });
+      storage.setLastLogin(user.id);
+
+      // Fragment, not query: it never reaches the server, so the session token
+      // stays out of access logs and the Referer header.
+      res.redirect(`/auth#token=${encodeURIComponent(token)}`);
+    } catch (err) {
+      log(`Google OAuth error: ${err}`, "auth");
+      authFail(res, "google_failed");
     }
   });
 
@@ -359,9 +508,8 @@ export async function registerRoutes(
   const upload = multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => {
-        const dir = join(process.cwd(), "uploads", "profiles");
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        if (!existsSync(PROFILE_UPLOADS_DIR)) mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
+        cb(null, PROFILE_UPLOADS_DIR);
       },
       filename: (_req, file, cb) => {
         const ext = file.originalname.split(".").pop()?.toLowerCase() || "jpg";

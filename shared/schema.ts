@@ -8,6 +8,10 @@ export const users = sqliteTable("users", {
   handle: text("handle").notNull().unique(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  // Google's stable subject id. Present only for accounts created via / linked
+  // to Google sign-in; those rows still carry an unguessable random
+  // password_hash so the password path can never authenticate them.
+  googleId: text("google_id"),
   isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
   accessStatus: text("access_status").default("active"), // pending | active | revoked
   invitedBy: integer("invited_by"),
@@ -20,6 +24,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   handle: true,
   email: true,
   passwordHash: true,
+  googleId: true,
   isAdmin: true,
   accessStatus: true,
   invitedBy: true,
@@ -479,3 +484,118 @@ export const w9Forms = sqliteTable("w9_forms", {
 
 export type W9Form = typeof w9Forms.$inferSelect;
 export type InsertW9Form = typeof w9Forms.$inferInsert;
+
+// ===== INVOICES =====
+// Stripe is the source of truth for PAYMENT STATE (status, amounts paid).
+// This table is the source of truth for WHO/WHAT/WHY (member linkage,
+// production association, internal notes) and mirrors Stripe's state.
+//
+// issuerUserId is NULL when THE FVC is the one billing. It exists now so
+// member-to-member invoicing (crew billing productions via Connect) can be
+// added later without a schema rewrite.
+export const invoices = sqliteTable("invoices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull().unique(), // FVC-2026-0041, shown in UI + emails
+  stripeInvoiceId: text("stripe_invoice_id").unique(), // NULL while local draft
+  stripeCustomerId: text("stripe_customer_id"), // encrypted at rest
+
+  issuerUserId: integer("issuer_user_id").references(() => users.id), // NULL = FVC
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  // Snapshotted at send time. A member can change their profile email after
+  // being invoiced; the invoice is a financial record and must show what was
+  // true when it was issued. Stripe freezes customer_email on finalize too.
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name").notNull(),
+
+  productionId: integer("production_id").references(() => productions.id),
+
+  status: text("status").notNull().default("draft"), // draft | open | paid | void | uncollectible
+  currency: text("currency").notNull().default("usd"),
+  subtotalCents: integer("subtotal_cents").notNull().default(0),
+  totalCents: integer("total_cents").notNull().default(0),
+  amountPaidCents: integer("amount_paid_cents").notNull().default(0),
+  amountDueCents: integer("amount_due_cents").notNull().default(0),
+
+  dueDate: integer("due_date", { mode: "timestamp" }),
+  issuedAt: integer("issued_at", { mode: "timestamp" }),
+  paidAt: integer("paid_at", { mode: "timestamp" }),
+  voidedAt: integer("voided_at", { mode: "timestamp" }),
+
+  hostedInvoiceUrl: text("hosted_invoice_url"), // Stripe pay page, post-finalize
+  invoicePdfUrl: text("invoice_pdf_url"),
+
+  memo: text("memo"), // shown to recipient
+  internalNote: text("internal_note"), // admin-only, MUST never be emailed
+
+  remindersEnabled: integer("reminders_enabled", { mode: "boolean" }).notNull().default(true),
+  reminderProfile: text("reminder_profile"), // JSON: [{offsetDays, tone}]
+
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+// ===== INVOICE LINE ITEMS =====
+export const invoiceLineItems = sqliteTable("invoice_line_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  stripeInvoiceItemId: text("stripe_invoice_item_id"),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitAmountCents: integer("unit_amount_cents").notNull(),
+  amountCents: integer("amount_cents").notNull(), // quantity * unitAmountCents, computed server-side
+  position: integer("position").notNull().default(0),
+});
+
+export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
+export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+// ===== INVOICE REMINDERS (auto follow-up queue) =====
+// One row per scheduled follow-up. UNIQUE(invoice_id, offset_days) is the
+// idempotency guard — a double-run of the scheduler cannot duplicate a reminder.
+export const invoiceReminders = sqliteTable("invoice_reminders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  offsetDays: integer("offset_days").notNull(), // negative = before due, 0 = on due, positive = overdue
+  sendAt: integer("send_at", { mode: "timestamp" }).notNull(),
+  tone: text("tone").notNull().default("neutral"), // friendly | neutral | firm | final
+  status: text("status").notNull().default("pending"), // pending | sent | skipped | failed | cancelled
+  sentAt: integer("sent_at", { mode: "timestamp" }),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+});
+
+export type InvoiceReminder = typeof invoiceReminders.$inferSelect;
+export type InsertInvoiceReminder = typeof invoiceReminders.$inferInsert;
+
+// ===== INVOICE EVENTS (append-only audit trail) =====
+export const invoiceEvents = sqliteTable("invoice_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(), // created | sent | reminder_sent | paid | payment_failed | voided | note
+  source: text("source").notNull(), // admin | stripe_webhook | dunning_worker | system
+  actorId: integer("actor_id").references(() => users.id),
+  payload: text("payload").default("{}"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type InvoiceEvent = typeof invoiceEvents.$inferSelect;
+export type InsertInvoiceEvent = typeof invoiceEvents.$inferInsert;
+
+// ===== STRIPE WEBHOOK EVENTS (dedupe) =====
+// Stripe retries for up to 3 days with exponential backoff and CAN deliver the
+// same event more than once. Without this table, a redelivered invoice.paid
+// would re-run side effects.
+export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
+  id: text("id").primaryKey(), // Stripe's evt_... id
+  type: text("type").notNull(),
+  receivedAt: integer("received_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  processedAt: integer("processed_at", { mode: "timestamp" }),
+  error: text("error"),
+});
+
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
+export type InsertStripeWebhookEvent = typeof stripeWebhookEvents.$inferInsert;

@@ -6,6 +6,7 @@ import {
   passwordResets, emailVerifications, blockedIps, newsCache,
   notifications,
   subscriptionTiers, payments, w9Forms,
+  invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -28,9 +29,13 @@ import type {
   SubscriptionTier, InsertSubscriptionTier,
   Payment, InsertPayment,
   W9Form, InsertW9Form,
+  Invoice, InsertInvoice,
+  InvoiceLineItem, InsertInvoiceLineItem,
+  InvoiceReminder, InsertInvoiceReminder,
+  InvoiceEvent, InsertInvoiceEvent,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, and, or, desc, sql, gte, lt, getTableColumns } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, gte, lte, lt, inArray, getTableColumns } from "drizzle-orm";
 import { sqlite } from "./migrate";
 import { decryptSensitive } from "./lib/encryption";
 
@@ -41,6 +46,7 @@ export interface IStorage {
   getUser(id: number): User | undefined;
   getUserByHandle(handle: string): User | undefined;
   getUserByEmail(email: string): User | undefined;
+  getUserByGoogleId(googleId: string): User | undefined;
   createUser(user: InsertUser): User;
 
   // Sessions
@@ -192,6 +198,37 @@ export interface IStorage {
   getProfileByStripeAccountId(accountId: string): Profile | undefined;
   getProfileByStripeCustomerId(customerId: string): Profile | undefined;
 
+  // Invoicing
+  createInvoice(data: InsertInvoice): Invoice;
+  getInvoice(id: number): Invoice | undefined;
+  getInvoiceByStripeId(stripeInvoiceId: string): Invoice | undefined;
+  updateInvoice(id: number, data: Partial<InsertInvoice>): Invoice | undefined;
+  deleteInvoice(id: number): boolean;
+  listInvoices(filters?: InvoiceFilters): Invoice[];
+  listInvoicesForUser(userId: number): Invoice[];
+  nextInvoicePublicId(): string;
+  getInvoiceStats(): InvoiceStats;
+
+  addLineItem(data: InsertInvoiceLineItem): InvoiceLineItem;
+  getLineItems(invoiceId: number): InvoiceLineItem[];
+  deleteLineItem(invoiceId: number, lineItemId: number): boolean;
+  updateLineItemStripeId(lineItemId: number, stripeInvoiceItemId: string): void;
+  recalcInvoiceTotals(invoiceId: number): Invoice | undefined;
+
+  createReminder(data: InsertInvoiceReminder): InvoiceReminder | undefined;
+  getReminders(invoiceId: number): InvoiceReminder[];
+  getDueReminders(now: Date, limit?: number): InvoiceReminder[];
+  updateReminder(id: number, data: Partial<InsertInvoiceReminder>): void;
+  cancelPendingReminders(invoiceId: number): number;
+  deletePendingReminders(invoiceId: number): number;
+
+  logInvoiceEvent(data: InsertInvoiceEvent): void;
+  getInvoiceEvents(invoiceId: number): InvoiceEvent[];
+
+  /** Returns false if this Stripe event has already been recorded. */
+  claimWebhookEvent(id: string, type: string): boolean;
+  markWebhookEventProcessed(id: string, error?: string): void;
+
   // ===== PRD-022v2: GDPR Export — Audit Logs & Analytics =====
   getSecurityLogsByUser(userId: number, limit?: number): SecurityAuditLog[];
   getAnalyticsByUser(userId: number, limit?: number): AnalyticsEvent[];
@@ -209,6 +246,10 @@ export class DatabaseStorage implements IStorage {
 
   getUserByEmail(email: string): User | undefined {
     return db.select().from(users).where(eq(users.email, email)).get();
+  }
+
+  getUserByGoogleId(googleId: string): User | undefined {
+    return db.select().from(users).where(eq(users.googleId, googleId)).get();
   }
 
   createUser(insertUser: InsertUser): User {
@@ -812,6 +853,249 @@ export class DatabaseStorage implements IStorage {
       return decrypted === customerId;
     });
   }
+
+  // ===== INVOICING =====
+
+  createInvoice(data: InsertInvoice): Invoice {
+    return db.insert(invoices).values(data).returning().get();
+  }
+
+  getInvoice(id: number): Invoice | undefined {
+    return db.select().from(invoices).where(eq(invoices.id, id)).get();
+  }
+
+  getInvoiceByStripeId(stripeInvoiceId: string): Invoice | undefined {
+    return db.select().from(invoices).where(eq(invoices.stripeInvoiceId, stripeInvoiceId)).get();
+  }
+
+  updateInvoice(id: number, data: Partial<InsertInvoice>): Invoice | undefined {
+    return db
+      .update(invoices)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(invoices.id, id))
+      .returning()
+      .get();
+  }
+
+  deleteInvoice(id: number): boolean {
+    const res = db.delete(invoices).where(eq(invoices.id, id)).run();
+    return res.changes > 0;
+  }
+
+  listInvoices(filters: InvoiceFilters = {}): Invoice[] {
+    const conditions = [];
+    if (filters.status) conditions.push(eq(invoices.status, filters.status));
+    if (filters.recipientUserId) conditions.push(eq(invoices.recipientUserId, filters.recipientUserId));
+    if (filters.productionId) conditions.push(eq(invoices.productionId, filters.productionId));
+    // "Overdue" is derived at read time, never stored — a stored flag goes
+    // stale the moment a due date passes without the job running.
+    if (filters.overdueOnly) {
+      conditions.push(eq(invoices.status, "open"));
+      conditions.push(lt(invoices.dueDate, new Date()));
+    }
+
+    return db
+      .select()
+      .from(invoices)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(invoices.createdAt))
+      .limit(filters.limit ?? 200)
+      .all();
+  }
+
+  listInvoicesForUser(userId: number): Invoice[] {
+    // Members never see their own drafts — a draft is not yet a real bill.
+    return db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.recipientUserId, userId), sql`${invoices.status} != 'draft'`))
+      .orderBy(desc(invoices.createdAt))
+      .all();
+  }
+
+  nextInvoicePublicId(): string {
+    const year = new Date().getFullYear();
+    const prefix = `FVC-${year}-`;
+    const last = db
+      .select({ publicId: invoices.publicId })
+      .from(invoices)
+      .where(sql`${invoices.publicId} LIKE ${prefix + "%"}`)
+      .orderBy(desc(invoices.publicId))
+      .limit(1)
+      .get();
+    const nextSeq = last ? parseInt(last.publicId.slice(prefix.length), 10) + 1 : 1;
+    return `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  }
+
+  getInvoiceStats(): InvoiceStats {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const open = db.select().from(invoices).where(eq(invoices.status, "open")).all();
+    const paidThisMonth = db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.status, "paid"), gte(invoices.paidAt, monthStart)))
+      .all();
+    const allPaid = db.select().from(invoices).where(eq(invoices.status, "paid")).all();
+
+    const daysToPay = allPaid
+      .filter((i) => i.issuedAt && i.paidAt)
+      .map((i) => (i.paidAt!.getTime() - i.issuedAt!.getTime()) / 86400000);
+
+    return {
+      outstandingCents: open.reduce((s, i) => s + i.amountDueCents, 0),
+      outstandingCount: open.length,
+      overdueCents: open
+        .filter((i) => i.dueDate && i.dueDate < now)
+        .reduce((s, i) => s + i.amountDueCents, 0),
+      overdueCount: open.filter((i) => i.dueDate && i.dueDate < now).length,
+      collectedThisMonthCents: paidThisMonth.reduce((s, i) => s + i.amountPaidCents, 0),
+      avgDaysToPay: daysToPay.length
+        ? Math.round((daysToPay.reduce((a, b) => a + b, 0) / daysToPay.length) * 10) / 10
+        : null,
+    };
+  }
+
+  addLineItem(data: InsertInvoiceLineItem): InvoiceLineItem {
+    return db.insert(invoiceLineItems).values(data).returning().get();
+  }
+
+  getLineItems(invoiceId: number): InvoiceLineItem[] {
+    return db
+      .select()
+      .from(invoiceLineItems)
+      .where(eq(invoiceLineItems.invoiceId, invoiceId))
+      .orderBy(asc(invoiceLineItems.position), asc(invoiceLineItems.id))
+      .all();
+  }
+
+  deleteLineItem(invoiceId: number, lineItemId: number): boolean {
+    const res = db
+      .delete(invoiceLineItems)
+      .where(and(eq(invoiceLineItems.id, lineItemId), eq(invoiceLineItems.invoiceId, invoiceId)))
+      .run();
+    return res.changes > 0;
+  }
+
+  updateLineItemStripeId(lineItemId: number, stripeInvoiceItemId: string): void {
+    db.update(invoiceLineItems)
+      .set({ stripeInvoiceItemId })
+      .where(eq(invoiceLineItems.id, lineItemId))
+      .run();
+  }
+
+  /** Recomputes totals from line items. Always server-side; client totals are never trusted. */
+  recalcInvoiceTotals(invoiceId: number): Invoice | undefined {
+    const items = this.getLineItems(invoiceId);
+    const subtotal = items.reduce((sum, li) => sum + li.amountCents, 0);
+    return this.updateInvoice(invoiceId, {
+      subtotalCents: subtotal,
+      totalCents: subtotal,
+      amountDueCents: subtotal,
+    });
+  }
+
+  /** Returns undefined if a reminder at this offset already exists (UNIQUE guard). */
+  createReminder(data: InsertInvoiceReminder): InvoiceReminder | undefined {
+    try {
+      return db.insert(invoiceReminders).values(data).returning().get();
+    } catch (err: any) {
+      if (String(err?.message || "").includes("UNIQUE")) return undefined;
+      throw err;
+    }
+  }
+
+  getReminders(invoiceId: number): InvoiceReminder[] {
+    return db
+      .select()
+      .from(invoiceReminders)
+      .where(eq(invoiceReminders.invoiceId, invoiceId))
+      .orderBy(asc(invoiceReminders.sendAt))
+      .all();
+  }
+
+  getDueReminders(now: Date, limit = 100): InvoiceReminder[] {
+    return db
+      .select()
+      .from(invoiceReminders)
+      .where(and(eq(invoiceReminders.status, "pending"), lte(invoiceReminders.sendAt, now)))
+      .orderBy(asc(invoiceReminders.sendAt))
+      .limit(limit)
+      .all();
+  }
+
+  updateReminder(id: number, data: Partial<InsertInvoiceReminder>): void {
+    db.update(invoiceReminders).set(data).where(eq(invoiceReminders.id, id)).run();
+  }
+
+  cancelPendingReminders(invoiceId: number): number {
+    const res = db
+      .update(invoiceReminders)
+      .set({ status: "cancelled" })
+      .where(and(eq(invoiceReminders.invoiceId, invoiceId), eq(invoiceReminders.status, "pending")))
+      .run();
+    return res.changes;
+  }
+
+  deletePendingReminders(invoiceId: number): number {
+    const res = db
+      .delete(invoiceReminders)
+      .where(and(eq(invoiceReminders.invoiceId, invoiceId), eq(invoiceReminders.status, "pending")))
+      .run();
+    return res.changes;
+  }
+
+  logInvoiceEvent(data: InsertInvoiceEvent): void {
+    db.insert(invoiceEvents).values(data).run();
+  }
+
+  getInvoiceEvents(invoiceId: number): InvoiceEvent[] {
+    return db
+      .select()
+      .from(invoiceEvents)
+      .where(eq(invoiceEvents.invoiceId, invoiceId))
+      .orderBy(desc(invoiceEvents.createdAt))
+      .all();
+  }
+
+  /**
+   * Atomically claim a Stripe event for processing.
+   * Returns false if we've seen this event ID before — Stripe redelivers,
+   * and re-running side effects on a redelivered invoice.paid would be bad.
+   */
+  claimWebhookEvent(id: string, type: string): boolean {
+    const res = sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO stripe_webhook_events (id, type, received_at) VALUES (?, ?, ?)`
+      )
+      .run(id, type, Date.now());
+    return res.changes > 0;
+  }
+
+  markWebhookEventProcessed(id: string, error?: string): void {
+    db.update(stripeWebhookEvents)
+      .set({ processedAt: new Date(), error: error ?? null })
+      .where(eq(stripeWebhookEvents.id, id))
+      .run();
+  }
+}
+
+export interface InvoiceFilters {
+  status?: string;
+  recipientUserId?: number;
+  productionId?: number;
+  overdueOnly?: boolean;
+  limit?: number;
+}
+
+export interface InvoiceStats {
+  outstandingCents: number;
+  outstandingCount: number;
+  overdueCents: number;
+  overdueCount: number;
+  collectedThisMonthCents: number;
+  avgDaysToPay: number | null;
 }
 
 export const storage = new DatabaseStorage();
