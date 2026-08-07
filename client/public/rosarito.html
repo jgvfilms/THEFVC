@@ -105,7 +105,10 @@ nav a:hover{color:var(--ox-hi)}
 @media(max-width:900px){.hero-grid{grid-template-columns:1fr;gap:34px}}
 .hero h1{
   font-family:'Bodoni Moda',serif;font-weight:900;
-  font-size:clamp(64px,13.5vw,178px);line-height:.82;letter-spacing:-.035em;
+  /* Floor is well below the vw term so it only engages on very narrow
+     screens. At 64px the title stopped scaling below ~474px and the final O
+     was clipped by body{overflow-x:hidden} on every phone. */
+  font-size:clamp(40px,13.5vw,178px);line-height:.82;letter-spacing:-.035em;
   margin:16px 0 22px;
 }
 .hero h1 .o{color:var(--ox-hi)}
