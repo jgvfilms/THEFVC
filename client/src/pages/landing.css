@@ -69,7 +69,7 @@
 .fvc-lp .cta-stack { display: flex; flex-direction: column; gap: .45rem; }
 .fvc-lp .cta-note { font: 400 .75rem/1.2 var(--f-mono); color: var(--ink-2); letter-spacing: .03em; }
 .fvc-lp .hero-media { position: relative; min-width: 0; }
-.fvc-lp .photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 55%; background: var(--frame); }
+.fvc-lp .photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; object-fit: cover; object-position: 52% 50%; background: var(--frame); }
 @media (max-width: 900px) {
   .fvc-lp .hero-grid { grid-template-columns: minmax(0, 1fr); padding-bottom: 40px; }
   .fvc-lp .photo { aspect-ratio: 4 / 3.4; }

@@ -47,9 +47,10 @@ const BETA_SEAT_LIMIT = 50;
 const RESERVED_HANDLES = new Set([
   "auth", "app", "crew", "u", "api", "uploads", "admin",
   "reset-password", "verify-email", "w9", "payments",
-  // Standalone page served at /rosarito — a member holding this handle would
-  // have a profile URL that silently resolves to the pitch page instead.
-  "rosarito",
+  // Standalone pages served at /rosarito and /JGarrettVorreuter — a member holding one
+  // of these handles would have a profile URL that silently resolves to the
+  // standalone page instead.
+  "rosarito", "jgarrettvorreuter",
   // Content pages moved off the homepage.
   "roadmap", "news",
 ]);
@@ -97,20 +98,21 @@ export async function registerRoutes(
   app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
 
-  // ===== ROSARITO — standalone pitch page at /rosarito =====
-  // A self-contained HTML document, deliberately outside the SPA. It has to be
-  // registered here so it wins against the bare-handle route (/:handle) and
-  // the SPA catch-all, both of which would otherwise swallow it.
-  app.get("/rosarito", (_req: Request, res: Response) => {
-    // Built output in production; source tree under tsx in dev.
-    const built = path.resolve(__dirname, "public", "rosarito.html");
-    const file = existsSync(built)
+  // ===== Standalone pages: /rosarito (pitch) and /JGarrettVorreuter (portfolio) =====
+  // Self-contained HTML documents, deliberately outside the SPA. They have to
+  // be registered here so they win against the bare-handle route (/:handle)
+  // and the SPA catch-all, both of which would otherwise swallow them.
+  const serveStandalone = (file: string, extraCsp = "") => (_req: Request, res: Response) => {
+    // Built output in production; source tree under tsx in dev. __dirname only
+    // exists in the esbuild CJS bundle — under tsx the package is ESM.
+    const built = typeof __dirname !== "undefined" ? path.resolve(__dirname, "public", file) : "";
+    const resolved = built && existsSync(built)
       ? built
-      : path.resolve(process.cwd(), "client", "public", "rosarito.html");
+      : path.resolve(process.cwd(), "client", "public", file);
 
     // The global CSP allows neither remote stylesheets nor remote fonts, which
-    // would silently drop this page to system serif — and it's a page whose
-    // whole identity is its typography. Widened here only, for this response.
+    // would silently drop these pages to system fonts — and they're pages whose
+    // whole identity is their typography. Widened here only, for this response.
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; " +
@@ -119,10 +121,17 @@ export async function registerRoutes(
         "font-src 'self' data: https://fonts.gstatic.com; " +
         "img-src 'self' data: https:; " +
         "connect-src 'self'; " +
+        extraCsp +
         "frame-ancestors 'none';",
     );
-    res.sendFile(file);
-  });
+    res.sendFile(resolved);
+  };
+  app.get("/rosarito", serveStandalone("rosarito.html"));
+  // The portfolio embeds the member's reel, same players as profile pages.
+  app.get("/JGarrettVorreuter", serveStandalone(
+    "jgarrettvorreuter.html",
+    "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; ",
+  ));
 
   // PRD-023v2: Health check endpoint (public, no auth required)
   app.get("/api/health", async (_req, res) => {

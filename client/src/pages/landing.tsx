@@ -112,10 +112,10 @@ export function Landing() {
           <div className="hero-media">
             <img
               className="photo"
-              src="/images/crew-on-location.jpg"
-              alt="A film crew on location in the sun: a boom operator in headphones, a camera operator on a ladder with a cinema camera, and crew members talking through the next setup."
-              width={1120}
-              height={1120}
+              src="/images/studio-session.jpg"
+              alt="A studio shoot washed in magenta and violet light: a subject seated on a stool against a cyc wall, LED tubes and a panel light on stands, a camera operator framing the shot in silhouette."
+              width={1440}
+              height={758}
             />
             <div className="peek" aria-label="Sample product preview: crew list">
               <div className="peek-head">
