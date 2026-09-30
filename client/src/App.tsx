@@ -9,6 +9,8 @@ import { ThemeProvider } from "./lib/theme";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { NotificationsProvider } from "@/components/notifications-bell";
 import { Landing } from "./pages/landing";
+import { RoadmapPage } from "./pages/roadmap";
+import { NewsPage } from "./pages/news";
 import { AuthPage } from "./pages/auth";
 import { DashboardLayout } from "./pages/layout";
 import { DashboardHome } from "./pages/dashboard-home";
@@ -61,6 +63,8 @@ function AppRouter() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/u/:handle" component={PublicProfile} />
       <Route path="/crew" component={CrewFinder} />
+      <Route path="/roadmap" component={RoadmapPage} />
+      <Route path="/news" component={NewsPage} />
       <Route path="/app">{() => <DashboardPage><DashboardHome /></DashboardPage>}</Route>
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
       <Route path="/app/productions/:id">{() => <DashboardPage><ProductionDetail /></DashboardPage>}</Route>

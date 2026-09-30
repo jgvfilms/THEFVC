@@ -10,6 +10,7 @@ import { storage } from "../storage";
 import { encryptSensitive } from "./encryption";
 import { syncInvoiceFromStripe } from "./invoicing";
 import { stripe } from "./stripe-client";
+import { platformFeeCents, type FeePayer } from "./platform-fee";
 
 // Re-exported so existing imports (`from "./lib/stripe"`) keep working.
 export { stripe, isStripeConfigured, STRIPE_API_VERSION } from "./stripe-client";
@@ -63,6 +64,7 @@ export async function createPaymentIntent(
   amount: number,
   currency: string,
   connectedAccountId: string,
+  payer: FeePayer,
   description?: string
 ): Promise<string> {
   const paymentIntent = await stripe.paymentIntents.create(
@@ -70,7 +72,7 @@ export async function createPaymentIntent(
       amount,
       currency,
       description,
-      application_fee_amount: Math.round(amount * 0.05), // 5% platform fee
+      application_fee_amount: platformFeeCents(amount, payer),
     },
     {
       stripeAccount: connectedAccountId,

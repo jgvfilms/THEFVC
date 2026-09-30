@@ -50,6 +50,8 @@ const RESERVED_HANDLES = new Set([
   // Standalone page served at /rosarito — a member holding this handle would
   // have a profile URL that silently resolves to the pitch page instead.
   "rosarito",
+  // Content pages moved off the homepage.
+  "roadmap", "news",
 ]);
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 

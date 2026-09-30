@@ -17,14 +17,16 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   // Referrer policy
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
-  // Content Security Policy
+  // Content Security Policy. Google Fonts is allowed because the SPA shell
+  // (index.html) links it for every route, and the landing page's type
+  // depends on it; without it the page silently falls back to system fonts.
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "img-src 'self' data: https:; " +
-    "font-src 'self' data:; " +
+    "font-src 'self' data: https://fonts.gstatic.com; " +
     "connect-src 'self'; " +
     "frame-ancestors 'none';"
   );

@@ -4,7 +4,7 @@
  * Tests the landing page renders correctly, navigation links work,
  * and the hero section displays expected content.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 test.describe("Landing Page", () => {
   test.beforeEach(async ({ page }) => {
@@ -14,62 +14,47 @@ test.describe("Landing Page", () => {
   test("should display the hero title", async ({ page }) => {
     const title = page.locator('[data-testid="hero-title"]');
     await expect(title).toBeVisible();
-    await expect(title).toContainText("Less paperwork.");
-    await expect(title).toContainText("More frames.");
-    await expect(title).toContainText("Better stories.");
+    await expect(title).toContainText("Independent");
+    await expect(title).toContainText("alone");
   });
 
   test("should display the hero subtitle", async ({ page }) => {
     const subtitle = page.locator('[data-testid="hero-subtitle"]');
     await expect(subtitle).toBeVisible();
-    await expect(subtitle).toContainText("all-in-one operating system for indie filmmaking");
+    await expect(subtitle).toContainText("Find your crew.");
   });
 
-  test("should display the beta badge", async ({ page }) => {
+  test("should display the early access label", async ({ page }) => {
     const badge = page.locator('[data-testid="badge-beta"]');
     await expect(badge).toBeVisible();
-    await expect(badge).toContainText("early access");
+    await expect(badge).toContainText(/early access/i);
   });
 
   test("should display CTA buttons", async ({ page }) => {
-    const signupCta = page.locator('[data-testid="cta-signup"]');
-    const browseCta = page.locator('[data-testid="cta-browse"]');
-    await expect(signupCta).toBeVisible();
-    await expect(browseCta).toBeVisible();
+    await expect(page.locator('[data-testid="cta-signup"]')).toBeVisible();
+    await expect(page.locator('[data-testid="cta-browse"]')).toBeVisible();
   });
 
-  test("should display the 30% stat", async ({ page }) => {
-    const stat = page.locator('[data-testid="stat-30"]');
-    await expect(stat).toBeVisible();
-    await expect(stat).toContainText("30%");
+  test("should not repeat unsourced claims", async ({ page }) => {
+    await expect(page.locator("body")).not.toContainText("30%");
   });
 
-  test("should display three pricing tiers", async ({ page }) => {
-    const free = page.locator('[data-testid="pricing-free"]');
-    const pro = page.locator('[data-testid="pricing-pro"]');
-    const studio = page.locator('[data-testid="pricing-studio"]');
-    await expect(free).toBeVisible();
-    await expect(pro).toBeVisible();
-    await expect(studio).toBeVisible();
+  test("should show crew, plan and payments views", async ({ page }) => {
+    await expect(page.locator('[data-testid="view-crew"]')).toBeVisible();
+    await expect(page.locator('[data-testid="view-plan"]')).toBeVisible();
+    await expect(page.locator('[data-testid="view-payments"]')).toBeVisible();
   });
 
-  test("should display three pillars", async ({ page }) => {
-    const payments = page.locator('[data-testid="pillar-payments"]');
-    const crew = page.locator('[data-testid="pillar-crew"]');
-    const dashboard = page.locator('[data-testid="pillar-dashboard"]');
-    await expect(payments).toBeVisible();
-    await expect(crew).toBeVisible();
-    await expect(dashboard).toBeVisible();
+  test("should display three plans", async ({ page }) => {
+    await expect(page.locator('[data-testid="pricing-free"]')).toBeVisible();
+    await expect(page.locator('[data-testid="pricing-pro"]')).toBeVisible();
+    await expect(page.locator('[data-testid="pricing-studio"]')).toBeVisible();
   });
 
-  test("should display the roadmap section", async ({ page }) => {
-    const title = page.locator('[data-testid="roadmap-title"]');
-    await expect(title).toBeVisible();
-    await expect(title).toContainText("AI roadmap");
-
-    // Should have 5 roadmap phases
-    const phases = page.locator('[data-testid^="roadmap-"]');
-    await expect(phases).toHaveCount(5);
+  test("should display three workflow steps", async ({ page }) => {
+    await expect(page.locator('[data-testid="step-crew"]')).toBeVisible();
+    await expect(page.locator('[data-testid="step-production"]')).toBeVisible();
+    await expect(page.locator('[data-testid="step-payments"]')).toBeVisible();
   });
 
   test("should display footer with copyright", async ({ page }) => {
@@ -81,16 +66,24 @@ test.describe("Landing Page", () => {
 
   test("should navigate to auth page when clicking login", async ({ page }) => {
     await page.click('[data-testid="link-login"]');
-    await expect(page).toHaveURL(/#\/auth/);
+    await expect(page).toHaveURL(/\/auth/);
   });
 
-  test("should navigate to auth page when clicking get started", async ({ page }) => {
+  test("should navigate to auth page when clicking join", async ({ page }) => {
     await page.click('[data-testid="cta-signup"]');
-    await expect(page).toHaveURL(/#\/auth/);
+    await expect(page).toHaveURL(/\/auth/);
   });
 
-  test("should navigate to crew finder when clicking browse crew", async ({ page }) => {
-    await page.click('[data-testid="link-crew"]');
-    await expect(page).toHaveURL(/#\/crew/);
+  test("should navigate to crew finder when clicking find crew", async ({ page }) => {
+    await page.click('[data-testid="cta-browse"]');
+    await expect(page).toHaveURL(/\/crew/);
+  });
+});
+
+test.describe("Roadmap page", () => {
+  test("lists the five roadmap phases", async ({ page }) => {
+    await page.goto("/roadmap");
+    await expect(page.locator('[data-testid="roadmap-title"]')).toContainText("AI roadmap");
+    await expect(page.locator('[data-testid^="roadmap-"]:not([data-testid="roadmap-title"])')).toHaveCount(5);
   });
 });
