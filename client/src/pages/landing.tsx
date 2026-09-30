@@ -59,7 +59,7 @@ export function LandingShell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 <Link href="/auth" className="nav-login" data-testid="link-login">Log In</Link>
-                <Link href="/auth" className="btn btn-primary" data-testid="link-signup">Join the Collective</Link>
+                <Link href="/auth" className="btn btn-primary" data-testid="link-signup">Join THE FVC</Link>
               </>
             )}
           </div>
@@ -102,7 +102,7 @@ export function Landing() {
             </p>
             <div className="cta-row">
               <div className="cta-stack">
-                <Link href="/auth" className="btn btn-primary" data-testid="cta-signup">Join the Collective</Link>
+                <Link href="/auth" className="btn btn-primary" data-testid="cta-signup">Join THE FVC</Link>
                 <span className="cta-note">Free to get started</span>
               </div>
               <Link href="/crew" className="btn btn-ghost" data-testid="cta-browse">Find Your Crew</Link>
@@ -110,13 +110,24 @@ export function Landing() {
           </div>
 
           <div className="hero-media">
-            <img
-              className="photo"
-              src="/images/studio-session.jpg"
-              alt="A studio shoot washed in magenta and violet light: a subject seated on a stool against a cyc wall, LED tubes and a panel light on stands, a camera operator framing the shot in silhouette."
-              width={1440}
-              height={758}
-            />
+            {/* Laid out like a magazine plate: the photo sits inside a printed
+                frame with crop marks, a folio line and a margin caption. */}
+            <figure className="plate">
+              <img
+                className="photo"
+                src="/images/crew-on-location.jpg"
+                alt="A film crew on location in the sun: a boom operator in headphones, a camera operator on a ladder with a cinema camera, and crew members talking through the next setup."
+                width={1120}
+                height={1120}
+              />
+              <span className="crop tl" aria-hidden="true" /><span className="crop tr" aria-hidden="true" />
+              <span className="crop bl" aria-hidden="true" /><span className="crop br" aria-hidden="true" />
+              <div className="plate-overlay" aria-hidden="true">
+                <div className="plate-folio"><span>FVC<b>/</b>Field Notes</span><span>No. 01</span></div>
+                <span className="plate-side">On location — between setups</span>
+                <span className="plate-fig">Fig. 01</span>
+              </div>
+            </figure>
             <div className="peek" aria-label="Sample product preview: crew list">
               <div className="peek-head">
                 <span className="label"><b>Salt Flats</b> / Crew</span>
@@ -295,7 +306,7 @@ export function Landing() {
           <div className="closing-side">
             <p>Find your collaborators and bring your next production together on FVC.</p>
             <div className="cta-row" style={{ alignItems: "center" }}>
-              <Link href="/auth" className="btn btn-primary" data-testid="cta-final">Join the Collective</Link>
+              <Link href="/auth" className="btn btn-primary" data-testid="cta-final">Join THE FVC</Link>
               <Link href="/crew" className="textlink">Browse Crew</Link>
             </div>
           </div>

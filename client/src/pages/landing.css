@@ -69,10 +69,48 @@
 .fvc-lp .cta-stack { display: flex; flex-direction: column; gap: .45rem; }
 .fvc-lp .cta-note { font: 400 .75rem/1.2 var(--f-mono); color: var(--ink-2); letter-spacing: .03em; }
 .fvc-lp .hero-media { position: relative; min-width: 0; }
-.fvc-lp .photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; object-fit: cover; object-position: 52% 50%; background: var(--frame); }
+.fvc-lp .photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 55%; background: var(--frame);
+  /* Print grade: a touch warm, lifted blacks, less saturation — the sky stops reading as a phone photo. */
+  filter: sepia(.18) saturate(.82) contrast(1.06) brightness(.97); }
 @media (max-width: 900px) {
   .fvc-lp .hero-grid { grid-template-columns: minmax(0, 1fr); padding-bottom: 40px; }
   .fvc-lp .photo { aspect-ratio: 4 / 3.4; }
+}
+
+/* Magazine plate around the hero photo. The paper-coloured mat, crop marks and
+   type are drawn in CSS, not baked into the JPEG, so they stay sharp at any size
+   and follow the palette. */
+.fvc-lp .plate { position: relative; margin: 0; padding: clamp(10px, 1.6vw, 18px); background: var(--panel); border: 1px solid var(--ink); box-shadow: 10px 10px 0 var(--rule); }
+.fvc-lp .plate::after { /* halftone + vignette over the image area only */
+  content: ""; position: absolute; inset: clamp(10px, 1.6vw, 18px); pointer-events: none;
+  background:
+    radial-gradient(circle at center, rgba(23,21,15,.13) .6px, transparent 1.1px) 0 0 / 4px 4px,
+    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(23,21,15,.38) 100%);
+  mix-blend-mode: multiply; }
+.fvc-lp .plate-overlay { position: absolute; inset: clamp(10px, 1.6vw, 18px); pointer-events: none; z-index: 2; color: #fffaf2;
+  /* Darken the top band so the folio reads against a bright sky. */
+  background: linear-gradient(to bottom, rgba(23,21,15,.5), rgba(23,21,15,0) 26%); }
+.fvc-lp .plate-overlay::before { /* printed inner rule */
+  content: ""; position: absolute; inset: clamp(12px, 2vw, 22px); border: 1px solid rgba(255,250,242,.75); }
+/* Printer's crop marks: short hairlines just outside each corner, not touching it. */
+.fvc-lp .crop { position: absolute; width: 14px; height: 14px; border: 0 solid var(--ink-2); z-index: 1; }
+.fvc-lp .crop.tl { top: -20px; left: -20px; border-right-width: 1px; border-bottom-width: 1px; }
+.fvc-lp .crop.tr { top: -20px; right: -20px; border-left-width: 1px; border-bottom-width: 1px; }
+.fvc-lp .crop.bl { bottom: -20px; left: -20px; border-right-width: 1px; border-top-width: 1px; }
+.fvc-lp .crop.br { bottom: -20px; right: -20px; border-left-width: 1px; border-top-width: 1px; }
+.fvc-lp .plate-folio { position: absolute; top: clamp(12px, 2vw, 22px); left: clamp(12px, 2vw, 22px); right: clamp(12px, 2vw, 22px);
+  display: flex; justify-content: space-between; padding: .55rem .7rem; font: 500 .68rem/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,250,242,.75); text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.fvc-lp .plate-folio b { color: var(--signal); font-weight: 500; margin: 0 .35em; }
+.fvc-lp .plate-side { position: absolute; right: clamp(20px, 3vw, 34px); top: 50%; transform: translateY(-50%) rotate(180deg); writing-mode: vertical-rl; white-space: nowrap;
+  font: 500 .64rem/1 var(--f-mono); letter-spacing: .18em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.fvc-lp .plate-fig { position: absolute; right: clamp(12px, 2vw, 22px); bottom: clamp(12px, 2vw, 22px); padding: .5rem .7rem;
+  background: var(--signal); color: var(--signal-ink); font: 800 1.05rem/1 var(--f-display); letter-spacing: .04em; text-transform: uppercase; }
+@media (max-width: 900px) {
+  .fvc-lp .plate { box-shadow: 6px 6px 0 var(--rule); }
+  .fvc-lp .plate-side { display: none; }
+  /* The side gutter is narrower than the marks' 20px offset; they'd cause sideways scroll. */
+  .fvc-lp .crop { display: none; }
 }
 
 /* Small product preview riding the photo's lower edge */
