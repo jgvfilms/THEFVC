@@ -219,6 +219,8 @@ section.block { padding-block: clamp(64px, 9vw, 128px); border-bottom: 1px solid
 .about .facts { margin-top: 2.2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem 2rem; max-width: 820px; }
 .about .facts div { border-top: 1px solid var(--rule); padding-top: .8rem; }
 .about .facts p { margin-top: .35rem; }
+.portrait { display: block; width: 100%; max-width: 320px; aspect-ratio: 4 / 5; object-fit: cover; margin-top: 1.6rem; background: var(--frame); border-radius: 2px; }
+.portrait[hidden] { display: none; }
 @media (max-width: 760px) { .about { grid-template-columns: minmax(0, 1fr); } }
 
 /* ── Contact ── */
@@ -366,6 +368,7 @@ footer a:hover { color: var(--signal); }
       <div class="reveal">
         <span class="label">04 — About</span>
         <h2 class="display" id="about-h" style="font-size:clamp(2.6rem,7vw,5.6rem);margin-top:.8rem">Hi<span class="dot">.</span></h2>
+        <img class="portrait" id="portrait" alt="J. Garrett Vorreuter" loading="lazy" hidden>
       </div>
       <div class="reveal">
         <p class="bio" id="bio">Filmmaker and founder of the Film Video Collective. Director, producer, and cinematographer with credits spanning features, shorts, TV series, and music videos.</p>
@@ -416,6 +419,8 @@ footer a:hover { color: var(--signal); }
     reelUrl: "",
     videoLinks: [],
     availability: "available",
+    avatarUrl: "",
+    socialLinks: { instagram: "https://www.instagram.com/jgvfilms/" },
     credits: [
       { title: "Unbillievable", year: 2023, role: "Director", imdbUrl: "https://www.imdb.com/title/tt27449919/" },
       { title: "Unbillievable", year: 2023, role: "Producer", imdbUrl: "https://www.imdb.com/title/tt27449919/" },
@@ -524,6 +529,22 @@ footer a:hover { color: var(--signal); }
     $("factAvail").textContent = p.availability === "available" ? "Open to projects" : p.availability === "busy" ? "Currently in production" : "Booking ahead";
     var imdb = safeUrl(p.imdbUrl);
     document.querySelectorAll('[data-link="imdb"]').forEach(function (a) { if (imdb) a.href = imdb; else a.remove(); });
+
+    // Uploaded photos are same-origin paths (/uploads/...), not absolute URLs.
+    var avatar = /^\/uploads\/[\w\/.-]+$/.test(p.avatarUrl || "") ? p.avatarUrl : safeUrl(p.avatarUrl);
+    var img = $("portrait");
+    if (avatar) { img.onerror = function () { img.hidden = true; }; img.src = avatar; img.hidden = false; } else img.hidden = true;
+
+    var LABELS = { instagram: "Instagram", vimeo: "Vimeo", youtube: "YouTube", tiktok: "TikTok", x: "X", twitter: "X", letterboxd: "Letterboxd", linkedin: "LinkedIn" };
+    document.querySelectorAll("[data-social]").forEach(function (a) { a.remove(); });
+    var social = parse(p.socialLinks, {});
+    Object.keys(social).forEach(function (k) {
+      var href = safeUrl(social[k]); if (!href) return;
+      var a = document.createElement("a");
+      a.className = "btn"; a.href = href; a.target = "_blank"; a.rel = "noopener"; a.setAttribute("data-social", k);
+      a.textContent = (LABELS[k.toLowerCase()] || k) + " ↗";
+      $("contactRow").appendChild(a);
+    });
 
     // Collapse one row per credit into one row per title.
     var byTitle = {};
@@ -679,6 +700,8 @@ footer a:hover { color: var(--signal); }
         reelUrl: pr.reelUrl,
         videoLinks: parse(pr.videoLinks, []),
         availability: pr.availability,
+        avatarUrl: pr.avatarUrl,
+        socialLinks: parse(pr.socialLinks, {}),
         credits: credits.length ? credits : FALLBACK.credits
       });
       $("live").classList.add("on");
