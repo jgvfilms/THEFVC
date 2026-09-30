@@ -56,6 +56,17 @@ const RESERVED_HANDLES = new Set([
 ]);
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 
+// Billing and tax state live on the profile row but belong to the member, not
+// the public. Every unauthenticated profile endpoint goes through this.
+function toPublicProfile<T extends Record<string, unknown>>(profile: T) {
+  const {
+    stripeCustomerId, stripeConnectAccountId,
+    subscriptionTier, subscriptionStatus, w9Collected,
+    ...publicFields
+  } = profile;
+  return publicFields;
+}
+
 // Helper: safely extract a string query param (Express returns string | string[] | undefined)
 const getQueryParam = (query: any, key: string): string | undefined => {
   const val = query[key];
@@ -410,7 +421,7 @@ export async function registerRoutes(
     const availability = getQueryParam(_req.query, "availability") as string;
 
     const results = storage.searchProfiles({ role, city, skill, availability });
-    res.json(results);
+    res.json(results.map(toPublicProfile));
   });
 
   // ===== PRD-006: Crew Finder Pagination Endpoint =====
@@ -428,7 +439,7 @@ export async function registerRoutes(
       offset: getQueryParam(req.query, "offset") ? getQueryParamInt(req.query, "offset", 0) : undefined,
     };
     const result = storage.searchProfilesPaginated(opts);
-    res.json(result);
+    res.json({ ...result, profiles: result.profiles.map(toPublicProfile) });
   });
 
   app.get("/api/profiles/:handle", async (req: AuthedRequest, res: Response) => {
@@ -441,7 +452,7 @@ export async function registerRoutes(
       return res.status(403).json({ error: "Profile is private" });
     }
     const credits = storage.getCreditsByProfile(profile.id);
-    res.json({ profile, credits });
+    res.json({ profile: toPublicProfile(profile), credits });
   });
 
   app.get("/api/profile", requireAuth, async (req: AuthedRequest, res: Response) => {

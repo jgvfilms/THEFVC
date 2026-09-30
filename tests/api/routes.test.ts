@@ -442,6 +442,52 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // These endpoints need no auth, so billing and tax state must never ride along.
+  describe("public profile endpoints hide billing fields", () => {
+    const PRIVATE = ["stripeCustomerId", "stripeConnectAccountId", "subscriptionTier", "subscriptionStatus", "w9Collected"];
+
+    beforeEach(() => {
+      const user = storage.createUser({
+        handle: "payinguser",
+        email: "paying@test.com",
+        passwordHash: hashPassword("pass123"),
+      });
+      storage.createProfile({
+        userId: user.id,
+        displayName: "Paying User",
+        role: "Director",
+        city: "Buffalo",
+        state: "NY",
+        skills: JSON.stringify([]),
+        isPublic: true,
+        availability: "available",
+        stripeCustomerId: "cus_test123",
+        stripeConnectAccountId: "acct_test123",
+        subscriptionTier: "pro",
+        subscriptionStatus: "active",
+      });
+    });
+
+    it("GET /api/profiles/:handle", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles/payinguser`)).json();
+      expect(body.profile.displayName).toBe("Paying User");
+      for (const k of PRIVATE) expect(body.profile).not.toHaveProperty(k);
+    });
+
+    it("GET /api/profiles", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles`)).json();
+      expect(body).toHaveLength(1);
+      for (const k of PRIVATE) expect(body[0]).not.toHaveProperty(k);
+    });
+
+    it("GET /api/profiles/paginated", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles/paginated`)).json();
+      expect(body.total).toBe(1);
+      expect(body.profiles[0].handle).toBe("payinguser");
+      for (const k of PRIVATE) expect(body.profiles[0]).not.toHaveProperty(k);
+    });
+  });
+
   // ===== BETA: Request Access =====
   describe("POST /api/beta/request", () => {
     it("should reject request without email", async () => {
