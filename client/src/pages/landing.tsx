@@ -56,10 +56,10 @@ function JoinComingSoon({ testId }: { testId: string }) {
   return <ComingSoonButton label="Join THE FVC" testId={testId} />;
 }
 
-export function LandingShell({ children }: { children: React.ReactNode }) {
+export function LandingShell({ children, theme }: { children: React.ReactNode; theme?: string }) {
   const { user } = useAuth();
   return (
-    <div className="fvc-lp">
+    <div className={theme && theme !== "warm" ? `fvc-lp theme-${theme}` : "fvc-lp"}>
       <a className="skip" href="#main">Skip to content</a>
       <header className="nav">
         <div className="wrap nav-in">

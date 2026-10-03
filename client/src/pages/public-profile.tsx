@@ -5,6 +5,7 @@ import { apiRequestJson, assetUrl } from "@/lib/queryClient";
 import { getVideoEmbedUrl } from "@/lib/video";
 import type { Profile, Credit } from "@shared/schema";
 import { LandingShell } from "./landing";
+import { normalizeProfileTheme } from "@/lib/profile-themes";
 
 // PRD-006: Public profile SEO — set meta tags dynamically
 function setProfileMeta(profile: Profile) {
@@ -100,8 +101,7 @@ const AVAILABILITY_LABELS: Record<string, string> = {
 };
 
 // Public profiles share the landing page's look so the brand reads the same
-// everywhere a visitor lands. Members' theme presets were built for the dark
-// app and aren't applied here.
+// everywhere a visitor lands; a member's chosen look only swaps its palette.
 export function PublicProfile() {
   const { handle } = useParams<{ handle: string }>();
 
@@ -152,6 +152,7 @@ export function PublicProfile() {
   const socialLinks: Record<string, string> = profile.socialLinks ? JSON.parse(profile.socialLinks) : {};
   const socials = Object.entries(socialLinks).filter(([, url]) => url);
   const initials = profile.avatarInitials || profile.displayName.slice(0, 2).toUpperCase();
+  const theme = normalizeProfileTheme(profile.themePreset);
   const place = profile.city ? `${profile.city}${profile.state ? `, ${profile.state}` : ""}` : null;
 
   const imdbCredits: ImdbCredit[] = profile.imdbCredits ? JSON.parse(profile.imdbCredits) : [];
@@ -163,7 +164,7 @@ export function PublicProfile() {
   const filmCredits = Array.from(byTitle.values()).sort((a, b) => (b.year || 0) - (a.year || 0));
 
   return (
-    <LandingShell>
+    <LandingShell theme={theme}>
       <section className="hero" aria-labelledby="pp-name">
         <div className="wrap pp-back">
           <Link href="/crew" className="label pp-backlink" data-testid="button-back-crew">← Crew directory</Link>

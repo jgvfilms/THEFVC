@@ -17,6 +17,8 @@
   --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --gutter: clamp(16px, 4vw, 56px);
   --max: 1360px;
+  /* Print grade for photos: a touch warm, lifted blacks, less saturation. */
+  --photo-tone: sepia(.18) saturate(.82) contrast(1.06) brightness(.97);
 
   color-scheme: light;
   min-height: 100vh;
@@ -76,8 +78,8 @@
 .fvc-lp .cta-note { font: 400 .75rem/1.2 var(--f-mono); color: var(--ink-2); letter-spacing: .03em; }
 .fvc-lp .hero-media { position: relative; min-width: 0; }
 .fvc-lp .photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 55%; background: var(--frame);
-  /* Print grade: a touch warm, lifted blacks, less saturation — the sky stops reading as a phone photo. */
-  filter: sepia(.18) saturate(.82) contrast(1.06) brightness(.97); }
+  /* The sky stops reading as a phone photo. */
+  filter: var(--photo-tone); }
 @media (max-width: 900px) {
   .fvc-lp .hero-grid { grid-template-columns: minmax(0, 1fr); padding-bottom: 40px; }
   .fvc-lp .photo { aspect-ratio: 4 / 3.4; }
@@ -282,7 +284,7 @@
 .fvc-lp .crew-person { border-bottom: 0; text-decoration: none; color: inherit; transition: background .15s; }
 .fvc-lp .crew-person:hover { background: var(--paper); box-shadow: inset 3px 0 0 var(--signal); }
 .fvc-lp .crew-person:hover .n { color: var(--signal); }
-.fvc-lp img.avatar { object-fit: cover; filter: sepia(.18) saturate(.82) contrast(1.06); }
+.fvc-lp img.avatar { object-fit: cover; filter: var(--photo-tone); }
 .fvc-lp .crew-who { min-width: 0; }
 .fvc-lp .crew-place::before { content: " · "; }
 .fvc-lp .crew-meta { display: grid; justify-items: end; gap: .35rem; }
@@ -299,8 +301,8 @@
 .fvc-lp .pp-hero { padding-top: clamp(16px, 2.4vw, 32px); }
 .fvc-lp .pp-id { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: center; }
 .fvc-lp .pp-avatar { width: clamp(64px, 6vw, 84px); aspect-ratio: 1; object-fit: cover; border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--signal);
-  background: var(--frame); color: var(--paper); display: grid; place-items: center; font: 800 1.6rem/1 var(--f-display);
-  filter: sepia(.18) saturate(.82) contrast(1.06); }
+  background: var(--frame); color: #fffaf2; display: grid; place-items: center; font: 800 1.6rem/1 var(--f-display);
+  filter: var(--photo-tone); }
 /* Sized to the column so long surnames wrap between words, never inside one. */
 .fvc-lp .pp-name { font-size: clamp(2.4rem, 14cqi, 7.5rem); hyphens: none; overflow-wrap: normal; word-break: keep-all; }
 .fvc-lp .pp-role { margin-top: .35rem; font: 500 .8rem/1.3 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--signal); }
@@ -308,7 +310,7 @@
 .fvc-lp .pp-facts { border-top: 2px solid var(--ink); max-width: 30rem; }
 .fvc-lp dl.pp-facts dt, .fvc-lp dl.pp-facts dd { padding-inline: 0; }
 .fvc-lp .pp-skills { display: grid; gap: .5rem; }
-.fvc-lp .pp-cover-blank { display: grid; place-items: center; color: var(--paper); font: 900 clamp(4rem, 14vw, 10rem)/1 var(--f-display); }
+.fvc-lp .pp-cover-blank { display: grid; place-items: center; color: #fffaf2; font: 900 clamp(4rem, 14vw, 10rem)/1 var(--f-display); }
 .fvc-lp .pp-reels { display: grid; gap: clamp(20px, 3vw, 40px); max-width: 1080px; }
 .fvc-lp .pp-reel { margin: 0; box-shadow: 10px 10px 0 var(--rule); }
 .fvc-lp .pp-frame { aspect-ratio: 16 / 9; background: var(--frame); }
@@ -322,3 +324,18 @@
 .fvc-lp a.sample-tag:hover { color: var(--ink); border-color: var(--ink); }
 .fvc-lp .pp-missing { display: grid; gap: 1.2rem; justify-items: start; }
 .fvc-lp .pp-missing h1 { font-size: clamp(2.8rem, 6.4vw, 6rem); }
+
+/* Profile looks a member can choose (lib/profile-themes.ts). Warm is the base
+   palette above; these swap only the tokens, so every component follows. */
+.fvc-lp.theme-blue_hour, .fvc-lp.theme-slate_teal { --photo-tone: saturate(.72) contrast(1.08) brightness(.97); }
+.fvc-lp.theme-blue_hour {
+  --paper: #e7ebee; --paper-2: #d8dfe4; --ink: #0f161d; --ink-2: #4f5b67; --rule: #c3ccd4;
+  --signal: #1d5c8c; --signal-ink: #f5f9fc; --frame: #1b232b; --ok: #2c6a59; --panel: #f5f7f8; }
+.fvc-lp.theme-slate_teal {
+  --paper: #e6ecea; --paper-2: #d6dfdc; --ink: #0e1a19; --ink-2: #4a5a57; --rule: #c0ccc9;
+  --signal: #0f6b63; --signal-ink: #f2fbf9; --frame: #182321; --ok: #2d6a3e; --panel: #f4f7f6; }
+.fvc-lp.theme-darkroom {
+  --paper: #11161b; --paper-2: #222b33; --ink: #e8edf0; --ink-2: #9aa7b2; --rule: #2b343c;
+  --signal: #4fa3c7; --signal-ink: #0b1014; --frame: #0a0d10; --ok: #6fbf9a; --panel: #182027;
+  --photo-tone: saturate(.8) contrast(1.05) brightness(.92);
+  color-scheme: dark; }
