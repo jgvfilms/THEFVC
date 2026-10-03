@@ -152,7 +152,14 @@ export async function registerRoutes(
   });
 
   // ----- AUTH -----
+  // Signup is closed until the flow is verified end to end. Read per request so
+  // it can be reopened by setting SIGNUP_ENABLED=true in the environment.
+  const signupEnabled = () => process.env.SIGNUP_ENABLED === "true";
+
   app.post("/api/auth/signup", async (req: AuthedRequest, res: Response) => {
+    if (!signupEnabled()) {
+      return res.status(403).json({ error: "Sign-up is coming soon." });
+    }
     try {
       const { handle, password, displayName, role, inviteToken } = req.body;
       const email = String(req.body.email || "").trim().toLowerCase();
@@ -284,6 +291,7 @@ export async function registerRoutes(
       }
 
       if (!user) {
+        if (!signupEnabled()) return authFail(res, "signup_closed");
         // New member — the beta gate applies exactly as it does to signup.
         const invite = state.inviteToken ? storage.getInviteByToken(state.inviteToken) : undefined;
         if (!invite || invite.status !== "active" || invite.usedCount >= invite.maxUses) {

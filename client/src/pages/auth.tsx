@@ -23,6 +23,7 @@ const OAUTH_ERRORS: Record<string, string> = {
   google_state: "That sign-in link expired. Please try again.",
   google_email_unverified: "Your Google account's email isn't verified.",
   invite_required: "The beta is invite-only. Request access to join the waitlist.",
+  signup_closed: "Sign-up is coming soon.",
   account_revoked: "That account's access has been revoked.",
   google_failed: "Google sign-in failed. Please try again.",
 };

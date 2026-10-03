@@ -45,6 +45,28 @@ describe("API Integration Tests", () => {
 
   // ===== AUTH: Signup =====
   describe("POST /api/auth/signup", () => {
+    it("should refuse all signups while SIGNUP_ENABLED is not 'true'", async () => {
+      const prev = process.env.SIGNUP_ENABLED;
+      delete process.env.SIGNUP_ENABLED;
+      try {
+        const res = await fetch(`${baseUrl}/api/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            handle: "closeduser",
+            email: "closed@example.com",
+            password: "Pass123!",
+            inviteToken: "any-token",
+          }),
+        });
+        expect(res.status).toBe(403);
+        await expect(res.json()).resolves.toMatchObject({ error: "Sign-up is coming soon." });
+        expect(storage.getUserByEmail("closed@example.com")).toBeUndefined();
+      } finally {
+        process.env.SIGNUP_ENABLED = prev;
+      }
+    });
+
     it("should reject signup without invite token (beta gate)", async () => {
       const res = await fetch(`${baseUrl}/api/auth/signup`, {
         method: "POST",
