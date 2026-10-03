@@ -19,7 +19,7 @@ interface SubscriptionStatus {
 export function PaymentsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"payments" | "tiers" | "w9">("payments");
+  const [activeTab, setActiveTab] = useState<"invoices" | "payments" | "tiers" | "w9">("invoices");
 
   const { data: payments, isLoading: isLoadingPayments } = useQuery({
     queryKey: ["payments"],
@@ -149,6 +149,17 @@ export function PaymentsPage() {
       {/* Tabs */}
       <div className="flex gap-2 border-b">
         <button
+          onClick={() => setActiveTab("invoices")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "invoices"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          data-testid="tab-invoices"
+        >
+          Invoices
+        </button>
+        <button
           onClick={() => setActiveTab("payments")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "payments"
@@ -182,6 +193,9 @@ export function PaymentsPage() {
           Tax Documents (W-9)
         </button>
       </div>
+
+      {/* Invoices Tab */}
+      {activeTab === "invoices" && <MemberInvoicesTab />}
 
       {/* Payment History Tab */}
       {activeTab === "payments" && (
@@ -406,5 +420,114 @@ export function PaymentsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ─── Member invoices ──────────────────────────────────────────
+// Read-only. The server scopes this to the session user; there is no
+// :userId parameter on /api/me/invoices by design.
+
+interface MemberInvoice {
+  id: number;
+  publicId: string;
+  status: "open" | "paid" | "void" | "uncollectible";
+  overdue: boolean;
+  totalCents: number;
+  amountDueCents: number;
+  dueDate: string | null;
+  paidAt: string | null;
+  memo: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+}
+
+function MemberInvoicesTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["my-invoices"],
+    queryFn: () => apiRequestJson<{ invoices: MemberInvoice[] }>("GET", "/api/me/invoices"),
+  });
+
+  const invoices = data?.invoices ?? [];
+  const outstanding = invoices
+    .filter((i) => i.status === "open")
+    .reduce((sum, i) => sum + i.amountDueCents, 0);
+
+  const fmt = (cents: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+  const date = (value: string | null) =>
+    value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          Invoices
+          {outstanding > 0 && (
+            <Badge className="ml-2 bg-amber-500/15 text-amber-500 border-amber-500/30">
+              {fmt(outstanding)} outstanding
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            You don't have any invoices.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {invoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                className="flex items-center justify-between gap-4 rounded-md border border-border p-3"
+                data-testid={`my-invoice-${invoice.publicId}`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{invoice.publicId}</span>
+                    {invoice.status === "paid" ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Paid</Badge>
+                    ) : invoice.overdue ? (
+                      <Badge className="bg-amber-500/15 text-amber-500 border-amber-500/30">Past due</Badge>
+                    ) : invoice.status === "open" ? (
+                      <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/30">Due {date(invoice.dueDate)}</Badge>
+                    ) : (
+                      <Badge variant="outline">{invoice.status}</Badge>
+                    )}
+                  </div>
+                  {invoice.memo && (
+                    <p className="text-sm text-muted-foreground truncate mt-1">{invoice.memo}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="font-semibold">{fmt(invoice.totalCents)}</span>
+                  {invoice.status === "open" && invoice.hostedInvoiceUrl && (
+                    <Button size="sm" asChild>
+                      <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noopener noreferrer">
+                        Pay
+                        <ExternalLink className="h-3 w-3 ml-1" />
+                      </a>
+                    </Button>
+                  )}
+                  {invoice.invoicePdfUrl && (
+                    <Button size="sm" variant="ghost" asChild>
+                      <a href={invoice.invoicePdfUrl} target="_blank" rel="noopener noreferrer">
+                        <Download className="h-3 w-3" />
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

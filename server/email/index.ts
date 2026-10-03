@@ -4,4 +4,5 @@ export {
   emailVerificationTemplate,
   welcomeTemplate,
   betaInviteTemplate,
+  invoiceReminderTemplate,
 } from "./templates";

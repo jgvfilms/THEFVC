@@ -1,237 +1,333 @@
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { ActivityFeed } from "@/components/activity-feed";
-import { IndustryNews } from "@/components/industry-news";
-import { Newspaper } from "lucide-react";
+import "./landing.css";
 
-export function Landing() {
-  const { user } = useAuth();
+// Plans are written into the page because production has no subscription_tiers
+// rows yet, so /api/subscription-tiers returns []. Prices are intentionally
+// omitted until paid plans are set up. Switch back to the API once they are.
+const PLANS = [
+  {
+    id: "free",
+    name: "Free",
+    kind: "Free",
+    for: "For your first short or a single project you’re crewing up.",
+    features: ["Up to 3 productions", "Up to 5 crew members", "Crew directory and public profile"],
+    cta: "Start free",
+    primary: false,
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    kind: "Monthly subscription",
+    for: "For working filmmakers running several projects a year and paying crew.",
+    features: ["Unlimited productions", "Crew payments and invoicing", "W-9 collection and 1099 prep"],
+    cta: "Get started",
+    primary: true,
+  },
+  {
+    id: "studio",
+    name: "Studio",
+    kind: "Monthly subscription",
+    for: "For production companies and collectives with many projects running at once.",
+    features: ["Unlimited productions", "Unlimited crew members", "Everything in Pro", "Priority support"],
+    cta: "Get started",
+    primary: false,
+  },
+];
 
+function Dot() {
+  return <span className="dot">.</span>;
+}
+
+/** Nav + footer shared by the landing page and the pages moved off it. */
+// Signup is closed for now: signup buttons stay on the page but don't link
+// anywhere, and read "COMING SOON" on hover or focus.
+function ComingSoonButton({ label, variant = "btn-primary", testId }: { label: string; variant?: string; testId?: string }) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* NAV */}
-      <nav className="fixed top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="6" fill="hsl(240 5% 5%)" />
-              <circle cx="16" cy="16" r="8" fill="none" stroke="hsl(41 76% 55%)" strokeWidth="2" />
-              <circle cx="16" cy="16" r="2.5" fill="hsl(41 76% 55%)" />
-            </svg>
-            <span className="font-display text-lg font-600 tracking-tight">THEFVC<span className="text-primary">.IS</span></span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link href="/crew" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-crew">Browse Crew</Link>
+    <span className={`btn ${variant} btn-soon`} role="link" aria-disabled="true" tabIndex={0}
+      aria-label={`${label}, coming soon`} data-testid={testId}>
+      <span className="soon-default" aria-hidden="true">{label}</span>
+      <span className="soon-hover" aria-hidden="true">COMING SOON</span>
+    </span>
+  );
+}
+
+function JoinComingSoon({ testId }: { testId: string }) {
+  return <ComingSoonButton label="Join THE FVC" testId={testId} />;
+}
+
+export function LandingShell({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  return (
+    <div className="fvc-lp">
+      <a className="skip" href="#main">Skip to content</a>
+      <header className="nav">
+        <div className="wrap nav-in">
+          <Link href="/" className="logo" aria-label="THEFVC.IS home">THEFVC<Dot />IS</Link>
+          <nav className="nav-links" aria-label="Primary">
+            <Link href="/crew" data-testid="link-crew">Find Crew</Link>
+            <a href="/#how">How It Works</a>
+            <a href="/#pricing">Pricing</a>
+          </nav>
+          <div className="nav-right">
             {user ? (
-              <Link href="/app" className="rounded-lg bg-primary px-4 py-2 text-sm font-500 text-primary-foreground hover:opacity-90 transition-opacity" data-testid="link-dashboard">Dashboard</Link>
+              <Link href="/app" className="btn btn-primary" data-testid="link-dashboard">Dashboard</Link>
             ) : (
               <>
-                <Link href="/auth" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-login">Log in</Link>
-                <Link href="/auth" className="rounded-lg bg-primary px-4 py-2 text-sm font-500 text-primary-foreground hover:opacity-90 transition-opacity" data-testid="link-signup">Get Started</Link>
+                <Link href="/auth" className="nav-login" data-testid="link-login">Log In</Link>
+                <JoinComingSoon testId="link-signup" />
               </>
             )}
           </div>
         </div>
-      </nav>
+      </header>
 
+      <main id="main">{children}</main>
+
+      <footer>
+        <div className="wrap foot">
+          <Link href="/" className="logo">THEFVC<Dot />IS</Link>
+          <nav aria-label="Footer">
+            <Link href="/crew">Find Crew</Link>
+            <a href="/#how">How It Works</a>
+            <a href="/#pricing">Pricing</a>
+            <Link href="/roadmap">Roadmap</Link>
+            <Link href="/news">Industry News</Link>
+            <Link href="/auth">Log In</Link>
+          </nav>
+          <p className="label">© 2026 Film Video Collective</p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+export function Landing() {
+  return (
+    <LandingShell>
       {/* HERO */}
-      <section className="relative flex min-h-screen items-center justify-center overflow-hidden pt-16">
-        <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-card" />
-        <div className="absolute inset-0 opacity-30" style={{ background: "radial-gradient(circle at 50% 30%, hsl(41 76% 55% / 0.15), transparent 60%)" }} />
-        <div className="relative z-10 mx-auto max-w-4xl px-4 sm:px-6 text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-1.5 text-xs font-500 text-muted-foreground" data-testid="badge-beta">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            Now in early access
+      <section className="hero" aria-labelledby="hero-title">
+        <div className="wrap hero-grid">
+          <div className="hero-copy">
+            <p className="label" data-testid="badge-beta">Film Video Collective / <b>Early Access</b></p>
+            <h1 id="hero-title" className="display" data-testid="hero-title">
+              Independent<br />doesn’t mean<br />alone<Dot />
+            </h1>
+            <p className="lede" data-testid="hero-subtitle">
+              Find your crew. Bring your production together. Keep the work moving. FVC gives independent filmmakers a shared place to make it happen.
+            </p>
+            <div className="cta-row">
+              <div className="cta-stack">
+                <JoinComingSoon testId="cta-signup" />
+                <span className="cta-note">Free to get started</span>
+              </div>
+              <Link href="/crew" className="btn btn-ghost" data-testid="cta-browse">Find Your Crew</Link>
+            </div>
           </div>
-          <h1 className="font-display text-4xl font-700 leading-[1.1] tracking-tight sm:text-5xl md:text-6xl" data-testid="hero-title">
-            Less paperwork.<br />
-            More frames.<br />
-            <span className="text-primary">Better stories.</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-base text-muted-foreground sm:text-lg" data-testid="hero-subtitle">
-            The all-in-one operating system for indie filmmaking. Payments, crew finder, and production management — built by filmmakers, for filmmakers.
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/auth" className="flex w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-600 text-primary-foreground hover:opacity-90 transition-opacity sm:w-auto" data-testid="cta-signup">
-              Start free — no credit card
-            </Link>
-            <Link href="/crew" className="flex w-full items-center justify-center rounded-lg border border-border px-6 py-3 text-sm font-500 text-foreground hover:bg-card transition-colors sm:w-auto" data-testid="cta-browse">
-              Browse the crew directory
-            </Link>
+
+          <div className="hero-media">
+            {/* Laid out like a magazine plate: the photo sits inside a printed
+                frame with crop marks, a folio line and a margin caption. */}
+            <figure className="plate">
+              <img
+                className="photo"
+                src="/images/crew-on-location.jpg"
+                alt="A film crew on location in the sun: a boom operator in headphones, a camera operator on a ladder with a cinema camera, and crew members talking through the next setup."
+                width={1120}
+                height={1120}
+              />
+              <span className="crop tl" aria-hidden="true" /><span className="crop tr" aria-hidden="true" />
+              <span className="crop bl" aria-hidden="true" /><span className="crop br" aria-hidden="true" />
+              <div className="plate-overlay" aria-hidden="true">
+                <div className="plate-folio"><span>FVC<b>/</b>Field Notes</span><span>No. 01</span></div>
+                <span className="plate-side">On location — between setups</span>
+                <span className="plate-fig">Fig. 01</span>
+              </div>
+            </figure>
+            <div className="peek" aria-label="Sample product preview: crew list">
+              <div className="peek-head">
+                <span className="label"><b>Salt Flats</b> / Crew</span>
+                <span className="sample-tag">Sample</span>
+              </div>
+              <div className="peek-row"><div><div className="who">Maya Ortiz</div><div className="role">Director of Photography</div></div><span className="chip ok">Confirmed</span></div>
+              <div className="peek-row"><div><div className="who">Dev Raman</div><div className="role">Gaffer</div></div><span className="chip ok">Confirmed</span></div>
+              <div className="peek-row"><div><div className="who">June Park</div><div className="role">Sound Mixer</div></div><span className="chip wait">Invited</span></div>
+            </div>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground" data-testid="hero-note">Free tier includes 3 projects. No withdrawal fees on Pro for the first $10K/mo.</p>
         </div>
       </section>
 
-      {/* PROBLEM STAT */}
-      <section className="border-t border-border py-20">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <p className="font-display text-6xl font-700 text-primary sm:text-7xl" data-testid="stat-30">30%</p>
-          <p className="mt-4 text-lg text-muted-foreground" data-testid="stat-description">
-            of indie film budgets vanish into admin overhead — spreadsheets, paper contracts, manual payments, lost call sheets. FVC takes that back.
-          </p>
+      {/* PRODUCT: one production, three connected views */}
+      <section className="band" aria-labelledby="product-title">
+        <div className="wrap">
+          <div className="sec-head">
+            <p className="label">One production, three views</p>
+            <h2 id="product-title" className="display">The people. The plan.<br />The production<Dot /></h2>
+          </div>
+
+          <div className="prod" aria-label="Sample production: Salt Flats">
+            <div className="prod-bar">
+              <span className="prod-title">Salt Flats</span>
+              <div className="prod-meta">
+                <span className="label">Short film</span>
+                <span className="label">Trona, CA</span>
+                <span className="label"><b>Oct 14 – 17, 2026</b></span>
+              </div>
+              <span className="sample-tag">Sample content</span>
+            </div>
+            <div className="views">
+              <div className="view" data-testid="view-crew">
+                <div className="view-h"><h3>Crew</h3><span className="label">6 of 8 confirmed</span></div>
+                <ul className="rows">
+                  <li className="linked"><span className="n">Maya Ortiz</span><span className="s">Director of Photography</span><span className="r"><span className="chip ok">Confirmed</span><span className="num">$850/day</span></span></li>
+                  <li><span className="n">Dev Raman</span><span className="s">Gaffer</span><span className="r"><span className="chip ok">Confirmed</span><span className="num">$600/day</span></span></li>
+                  <li className="linked"><span className="n">Luis Echevarría</span><span className="s">1st AC</span><span className="r"><span className="chip ok">Confirmed</span><span className="num">$450/day</span></span></li>
+                  <li><span className="n">June Park</span><span className="s">Sound Mixer</span><span className="r"><span className="chip wait">Invited</span><span className="num">$550/day</span></span></li>
+                  <li><span className="n">Ade Bello</span><span className="s">Production Designer</span><span className="r"><span className="chip wait">Invited</span><span className="num">$500/day</span></span></li>
+                </ul>
+              </div>
+              <div className="view" data-testid="view-plan">
+                <div className="view-h"><h3>Plan</h3><span className="label">Status</span></div>
+                <ol className="pipeline">
+                  <li className="done">Pre-production</li>
+                  <li className="cur">In production</li>
+                  <li>Post</li>
+                  <li>Wrapped</li>
+                </ol>
+                <dl className="facts">
+                  <dt>Shoot</dt><dd className="num">Oct 14 – 17</dd>
+                  <dt>Location</dt><dd>Trona, CA</dd>
+                  <dt>Type</dt><dd>Short film</dd>
+                  <dt>Budget</dt><dd className="num">$18,000</dd>
+                </dl>
+              </div>
+              <div className="view" data-testid="view-payments">
+                <div className="view-h"><h3>Payments</h3><span className="label">Via Stripe</span></div>
+                <ul className="rows">
+                  <li className="linked"><span className="n">Maya Ortiz</span><span className="s">DP · 2 days</span><span className="r"><span className="chip ok">Paid</span><span className="num">$1,700.00</span></span></li>
+                  <li className="linked"><span className="n">Luis Echevarría</span><span className="s">1st AC · 2 days</span><span className="r"><span className="chip wait">Pending</span><span className="num">$900.00</span></span></li>
+                </ul>
+                <div className="totals">
+                  <span className="k">Paid through FVC</span><span className="num">$2,600.00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="prod-caption">The same crew, from booking to payment. Names marked in orange appear in both the crew list and the payment log.</p>
         </div>
       </section>
 
-      {/* THREE PILLARS */}
-      <section className="border-t border-border py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="mb-12 text-center font-display text-3xl font-600" data-testid="pillars-title">Three tools. One workflow.</h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-border bg-card p-6" data-testid="pillar-payments">
-              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-              </div>
-              <h3 className="mb-2 font-display text-xl font-600">Payments</h3>
-              <p className="text-sm text-muted-foreground">Pay crew via Stripe. Auto-collect W-9s, generate 1099s, categorize by department. Virtual cards for production budgets coming Phase 2.</p>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6" data-testid="pillar-crew">
-              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M17 11a3 3 0 100-6"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M17 21v-2a4 4 0 00-3-3.87"/></svg>
-              </div>
-              <h3 className="mb-2 font-display text-xl font-600">Crew Finder</h3>
-              <p className="text-sm text-muted-foreground">Geo-search crew by role, city, and availability. Vouch system. Pre-loaded SAG contract templates. No more Facebook group posts.</p>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6" data-testid="pillar-dashboard">
-              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              </div>
-              <h3 className="mb-2 font-display text-xl font-600">Production Dashboard</h3>
-              <p className="text-sm text-muted-foreground">Auto-generate call sheets, QR face ID for check-in, schedule sync across devices. Your set, organized — without the spreadsheet sprawl.</p>
-            </div>
+      {/* WORKFLOW */}
+      <section className="band" id="how" aria-labelledby="how-title">
+        <div className="wrap">
+          <div className="sec-head">
+            <p className="label">How it works</p>
+            <h2 id="how-title" className="display">From first call<br />to final payment<Dot /></h2>
           </div>
+
+          <article className="spread" data-testid="step-crew">
+            <div className="spread-text">
+              <p className="label">Crew</p>
+              <h3 className="display">Find the people who make it possible<Dot /></h3>
+              <p>Discover crew by role and location, and learn about the people behind the work.</p>
+              <Link href="/crew" className="textlink">Explore the Crew</Link>
+            </div>
+            <div className="spread-detail">
+              <div className="card" aria-label="Sample crew search">
+                <div className="card-h"><span className="label"><b>Find Crew</b></span><span className="sample-tag">Sample</span></div>
+                <div className="filters" aria-hidden="true">
+                  <span className="filter">Role: <b>Gaffer</b></span>
+                  <span className="filter">City: <b>Los Angeles</b></span>
+                  <span className="filter">Availability: <b>Open</b></span>
+                </div>
+                <div className="person">
+                  <div className="avatar" aria-hidden="true">DR</div>
+                  <div><div className="n">Dev Raman</div><div className="s">Gaffer · Los Angeles, CA</div><div className="tags"><span>Night exteriors</span><span>Aputure</span><span>Narrative</span></div></div>
+                  <span className="chip ok">Available</span>
+                </div>
+                <div className="person">
+                  <div className="avatar" aria-hidden="true">TO</div>
+                  <div><div className="n">Tess Okafor</div><div className="s">Gaffer · Pasadena, CA</div><div className="tags"><span>Music videos</span><span>Small crews</span></div></div>
+                  <span className="chip wait">Booked</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="spread flip" data-testid="step-production">
+            <div className="spread-text">
+              <p className="label">Production</p>
+              <h3 className="display">Get everyone on the same page<Dot /></h3>
+              <p>Keep dates, location, budget and your crew list in one shared production, so nobody is working from an old text thread.</p>
+            </div>
+            <div className="spread-detail">
+              <div className="card" aria-label="Sample production detail">
+                <div className="card-h"><span className="label"><b>Salt Flats</b> / Production</span><span className="chip now">In production</span></div>
+                <dl className="facts">
+                  <dt>Shoot dates</dt><dd className="num">Oct 14 – 17, 2026</dd>
+                  <dt>Location</dt><dd>Trona, CA</dd>
+                  <dt>Crew</dt><dd className="num">6 confirmed · 2 invited</dd>
+                  <dt>Budget</dt><dd className="num">$18,000</dd>
+                </dl>
+              </div>
+            </div>
+          </article>
+
+          <article className="spread" data-testid="step-payments">
+            <div className="spread-text">
+              <p className="label">Payments</p>
+              <h3 className="display">Keep the business side moving<Dot /></h3>
+              <p>Pay crew and keep W-9s with the project, so tax season doesn’t start with a hunt through your inbox.</p>
+            </div>
+            <div className="spread-detail">
+              <div className="card" aria-label="Sample crew payment">
+                <div className="card-h"><span className="label"><b>Pay Crew</b> / Salt Flats</span><span className="sample-tag">Sample</span></div>
+                <div className="pay-line"><span className="k">Crew member</span><span>Maya Ortiz, DP</span></div>
+                <div className="pay-line"><span className="k">2 days × $850</span><span className="num">$1,700.00</span></div>
+                <div className="pay-line"><span className="k">W-9</span><span className="chip ok">On file</span></div>
+                <div className="pay-line"><span className="k">Status</span><span className="chip ok">Paid</span></div>
+              </div>
+            </div>
+          </article>
         </div>
       </section>
 
       {/* PRICING */}
-      <section className="border-t border-border py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="mb-12 text-center font-display text-3xl font-600" data-testid="pricing-title">Pricing that grows with you</h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-border bg-card p-6" data-testid="pricing-free">
-              <h3 className="font-display text-lg font-600">Free</h3>
-              <p className="mt-1 text-sm text-muted-foreground">For solo creators</p>
-              <p className="mt-4 font-display text-4xl font-700">$0<span className="text-base text-muted-foreground">/mo</span></p>
-              <ul className="mt-6 space-y-2 text-sm text-muted-foreground">
-                <li>3 active projects</li>
-                <li>Crew finder access</li>
-                <li>Standard withdrawal fees</li>
-                <li>Basic call sheets</li>
-              </ul>
-              <Link href="/auth" className="mt-6 block rounded-lg border border-border py-2 text-center text-sm font-500 hover:bg-secondary transition-colors">Start free</Link>
-            </div>
-            <div className="relative rounded-xl border-2 border-primary bg-card p-6" data-testid="pricing-pro">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-0.5 text-xs font-600 text-primary-foreground">Popular</div>
-              <h3 className="font-display text-lg font-600">Pro</h3>
-              <p className="mt-1 text-sm text-muted-foreground">For working filmmakers</p>
-              <p className="mt-4 font-display text-4xl font-700">$15<span className="text-base text-muted-foreground">/mo</span></p>
-              <ul className="mt-6 space-y-2 text-sm text-muted-foreground">
-                <li>Unlimited projects</li>
-                <li>Tax exports (1099/W-9)</li>
-                <li>No withdrawal fees (first $10K/mo)</li>
-                <li>Auto-generated call sheets</li>
-                <li>Priority crew listings</li>
-              </ul>
-              <Link href="/auth" className="mt-6 block rounded-lg bg-primary py-2 text-center text-sm font-600 text-primary-foreground hover:opacity-90 transition-opacity">Go Pro</Link>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6" data-testid="pricing-studio">
-              <h3 className="font-display text-lg font-600">Studio</h3>
-              <p className="mt-1 text-sm text-muted-foreground">For production companies</p>
-              <p className="mt-4 font-display text-4xl font-700">$49<span className="text-base text-muted-foreground">/mo</span></p>
-              <ul className="mt-6 space-y-2 text-sm text-muted-foreground">
-                <li>Everything in Pro</li>
-                <li>Team accounts (up to 10 seats)</li>
-                <li>Bulk payments</li>
-                <li>API access</li>
-                <li>White-label call sheets</li>
-              </ul>
-              <Link href="/auth" className="mt-6 block rounded-lg border border-border py-2 text-center text-sm font-500 hover:bg-secondary transition-colors">Contact us</Link>
-            </div>
+      <section className="band" id="pricing" aria-labelledby="pricing-title">
+        <div className="wrap">
+          <div className="sec-head">
+            <p className="label">Pricing</p>
+            <h2 id="pricing-title" className="display" data-testid="pricing-title">Room for your first project.<br />And the next one<Dot /></h2>
           </div>
-        </div>
-      </section>
-
-      {/* COMMUNITY FEED + INDUSTRY NEWS */}
-      <section className="border-t border-border py-16">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="mb-2 text-center font-display text-3xl font-600" data-testid="feed-section-title">What's happening in the collective</h2>
-          <p className="mb-10 text-center text-sm text-muted-foreground">
-            Member activity, industry news, and the latest from the world of indie film
-          </p>
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_400px]">
-            {/* Left: Member Activity Feed */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Member Activity</h3>
-              <ActivityFeed publicMode={true} />
-            </div>
-            {/* Right: Industry News */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4 flex items-center gap-2">
-                <Newspaper className="h-4 w-4" />
-                Industry News
-              </h3>
-              <IndustryNews limit={8} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* AI ROADMAP */}
-      <section className="border-t border-border py-20">
-        <div className="mx-auto max-w-4xl px-6">
-          <h2 className="mb-12 text-center font-display text-3xl font-600" data-testid="roadmap-title">The AI roadmap</h2>
-          <div className="space-y-4">
-            {[
-              { phase: "Phase 1", time: "6-9 months", title: "Script Whisperer", desc: "Scene breakdowns, character schedules, script-to-schedule automation." },
-              { phase: "Phase 2", time: "9-12 months", title: "Call Sheet Oracle", desc: "AI-generated call sheets that adapt to weather, location, and crew availability." },
-              { phase: "Phase 3", time: "12-18 months", title: "Dailies Brain", desc: "Upload dailies, get auto-tagged scenes, continuity tracking, and director's notes." },
-              { phase: "Phase 4", time: "18-24 months", title: "Budget Guardian", desc: "Real-time budget tracking with predictive overruns and cost-saving suggestions." },
-              { phase: "Phase 5", time: "Moonshot", title: "Festival Matchmaker", desc: "Match your finished film to the right festivals based on programming history and fit." },
-            ].map((item, i) => (
-              <div key={i} className="flex gap-4 rounded-xl border border-border bg-card p-5" data-testid={`roadmap-${i}`}>
-                <div className="flex flex-col items-center">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-xs font-700 text-accent-foreground">{i + 1}</div>
-                  {i < 4 && <div className="mt-1 h-full w-px bg-border" />}
-                </div>
-                <div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-primary">{item.phase}</span>
-                    <span className="text-xs text-muted-foreground">{item.time}</span>
-                  </div>
-                  <h3 className="mt-1 font-display text-lg font-600">{item.title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{item.desc}</p>
-                </div>
+          <div className="plans">
+            {PLANS.map((plan) => (
+              <div key={plan.id} className="plan" data-testid={`pricing-${plan.id}`}>
+                <h3>{plan.name}</h3>
+                <p className="for">{plan.for}</p>
+                <div className="plan-kind">{plan.kind}</div>
+                <ul>
+                  {plan.features.map((f) => <li key={f}>{f}</li>)}
+                </ul>
+                <ComingSoonButton label={plan.cta} variant={plan.primary ? "btn-primary" : "btn-ghost"} testId={`pricing-cta-${plan.id}`} />
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* FINAL CTA */}
-      <section className="border-t border-border py-24">
-        <div className="mx-auto max-w-2xl px-6 text-center">
-          <h2 className="font-display text-4xl font-700" data-testid="cta-title">Ditch the spreadsheets.<br /><span className="text-primary">Arm the revolution.</span></h2>
-          <p className="mt-4 text-muted-foreground" data-testid="cta-subtitle">Join the first 1,000 indie filmmakers building on FVC.</p>
-          <Link href="/auth" className="mt-8 inline-flex items-center rounded-lg bg-primary px-8 py-3 text-sm font-600 text-primary-foreground hover:opacity-90 transition-opacity" data-testid="cta-final">
-            Get started free
-          </Link>
+      {/* CLOSING */}
+      <section className="band" aria-labelledby="closing-title">
+        <div className="wrap closing">
+          <h2 id="closing-title" className="display" data-testid="cta-title">Your next film starts<br />with your people<Dot /></h2>
+          <div className="closing-side">
+            <p>Find your collaborators and bring your next production together on FVC.</p>
+            <div className="cta-row" style={{ alignItems: "center" }}>
+              <JoinComingSoon testId="cta-final" />
+              <Link href="/crew" className="textlink">Browse Crew</Link>
+            </div>
+          </div>
         </div>
       </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-border py-12">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
-          <div className="flex items-center gap-2.5">
-            <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="6" fill="hsl(240 5% 5%)" />
-              <circle cx="16" cy="16" r="8" fill="none" stroke="hsl(41 76% 55%)" strokeWidth="2" />
-              <circle cx="16" cy="16" r="2.5" fill="hsl(41 76% 55%)" />
-            </svg>
-            <span className="font-display text-sm font-600">THEFVC.IS</span>
-          </div>
-          <p className="text-xs text-muted-foreground">© 2026 Film Video Collective. Built by filmmakers, for filmmakers.</p>
-        </div>
-      </footer>
-    </div>
+    </LandingShell>
   );
 }

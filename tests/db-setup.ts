@@ -33,6 +33,11 @@ if (!process.env.ENCRYPTION_KEY) {
   process.env.ENCRYPTION_KEY = "0".repeat(64);
 }
 
+// Production keeps signup closed unless this is set; most suites need it open.
+if (process.env.SIGNUP_ENABLED === undefined) {
+  process.env.SIGNUP_ENABLED = "true";
+}
+
 const dbPath = join(tmpdir(), `thefvc-test-${process.pid}-${randomUUID()}.db`);
 process.env.DATABASE_PATH = dbPath;
 

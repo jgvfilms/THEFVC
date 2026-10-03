@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Link, useParams } from "wouter";
 import { apiRequestJson, assetUrl } from "@/lib/queryClient";
+import { getVideoEmbedUrl } from "@/lib/video";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,15 +84,7 @@ interface VideoLink {
   title: string;
 }
 
-function getEmbedUrl(url: string): string | null {
-  // YouTube
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
-  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
-  // Vimeo
-  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
-  return null;
-}
+const getEmbedUrl = getVideoEmbedUrl;
 
 const SOCIAL_ICONS: Record<string, typeof Instagram> = {
   instagram: Instagram,
@@ -153,6 +146,12 @@ export function PublicProfile() {
   const { profile, credits } = data;
   const skills: string[] = profile.skills ? JSON.parse(profile.skills) : [];
   const videoLinks: VideoLink[] = profile.videoLinks ? JSON.parse(profile.videoLinks) : [];
+  // Show the reel inline rather than as a link off-site. Only when it's
+  // actually embeddable — otherwise it stays a button under Quick Links.
+  const reelEmbeddable = !!profile.reelUrl && !!getVideoEmbedUrl(profile.reelUrl);
+  const reels: VideoLink[] = reelEmbeddable
+    ? [{ provider: "reel", url: profile.reelUrl!, title: "Reel" }, ...videoLinks]
+    : videoLinks;
   const socialLinks: Record<string, string> = profile.socialLinks ? JSON.parse(profile.socialLinks) : {};
   const theme = THEMES[profile.themePreset || "cinema_gold"] || THEMES.cinema_gold;
 
@@ -282,9 +281,9 @@ export function PublicProfile() {
           )}
 
           {/* Quick Links */}
-          {(profile.reelUrl || profile.imdbUrl || profile.websiteUrl) && (
+          {((profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {profile.reelUrl && (
+              {profile.reelUrl && !reelEmbeddable && (
                 <a href={profile.reelUrl} target="_blank" rel="noopener noreferrer">
                   <Button variant="outline" size="sm" data-testid="link-reel">
                     <ExternalLink className="h-3 w-3 mr-1" /> Reel
@@ -311,10 +310,10 @@ export function PublicProfile() {
       </Card>
 
       {/* Video Embeds */}
-      {videoLinks.length > 0 && (
+      {reels.length > 0 && (
         <div className="mt-4 space-y-4">
           <h3 className="font-display text-base font-semibold px-1">Reels & Work</h3>
-          {videoLinks.map((video, idx) => {
+          {reels.map((video, idx) => {
             const embedUrl = getEmbedUrl(video.url);
             return (
               <Card key={idx} data-testid={`video-${idx}`}>
