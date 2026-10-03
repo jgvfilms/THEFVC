@@ -58,7 +58,7 @@ export function AuthPage() {
   const { login, signup, adoptToken } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<"login" | "signup" | "request">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "request" | "forgot">("login");
   const [loading, setLoading] = useState(false);
   // `disabled={loading}` alone doesn't stop a fast double-click or Enter+click:
   // the button only becomes disabled on the next render, and both event
@@ -87,6 +87,10 @@ export function AuthPage() {
   const [reqCity, setReqCity] = useState("");
   const [reqMessage, setReqMessage] = useState("");
   const [reqSubmitted, setReqSubmitted] = useState(false);
+
+  // Forgot-password fields
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   // Returning from the Google redirect: either a session token in the fragment
   // or an error code in the query string.
@@ -206,6 +210,25 @@ export function AuthPage() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) {
+      toast({ title: "Email is required", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiRequestJson("POST", "/api/auth/password-reset/request", { email: resetEmail });
+      // The server answers the same way whether or not the account exists,
+      // so the UI does too.
+      setResetSent(true);
+    } catch (err: any) {
+      toast({ title: parseApiErrorMessage(err, "Couldn't send reset link"), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-background lg:flex-row">
       {/* Left: Form */}
@@ -260,7 +283,17 @@ export function AuthPage() {
                   <Input id="email" type="email" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-email" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => { setResetEmail(email); setResetSent(false); setMode("forgot"); }}
+                      className="text-xs text-primary hover:underline"
+                      data-testid="link-forgot-password"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="........" data-testid="input-password" />
                 </div>
                 <Button type="submit" disabled={loading} className="w-full" data-testid="button-submit">
@@ -269,6 +302,33 @@ export function AuthPage() {
               </form>
 
               <GoogleButton label="Continue with Google" inviteToken={inviteToken} />
+            </>
+          )}
+
+          {/* FORGOT PASSWORD MODE */}
+          {mode === "forgot" && (
+            <>
+              <h1 className="font-display text-xl font-700" data-testid="auth-title">Reset your password</h1>
+              {resetSent ? (
+                <p className="mt-2 text-sm text-muted-foreground" data-testid="reset-sent">
+                  If an account exists for {resetEmail}, we've sent a link to reset its password. The link expires in an hour.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-muted-foreground" data-testid="auth-subtitle">
+                    Enter your account's email and we'll send you a reset link.
+                  </p>
+                  <form onSubmit={handleForgotPassword} className="mt-6 space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="resetEmail">Email</Label>
+                      <Input id="resetEmail" type="email" autoCapitalize="none" value={resetEmail} onChange={e => setResetEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-reset-email" />
+                    </div>
+                    <Button type="submit" disabled={loading} className="w-full" data-testid="button-send-reset">
+                      {loading ? "Sending..." : "Send reset link"}
+                    </Button>
+                  </form>
+                </>
+              )}
             </>
           )}
 
@@ -392,7 +452,7 @@ export function AuthPage() {
 
           {/* Footer links */}
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+            {mode === "login" ? "Don't have an account? " : mode === "forgot" ? "Remembered it? " : "Already have an account? "}
             <button
               onClick={() => setMode(mode === "login" ? (inviteToken ? "signup" : "request") : "login")}
               className="text-primary hover:underline font-500"

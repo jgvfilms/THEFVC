@@ -12,6 +12,7 @@ import { Landing } from "./pages/landing";
 import { RoadmapPage } from "./pages/roadmap";
 import { NewsPage } from "./pages/news";
 import { AuthPage } from "./pages/auth";
+import { ResetPasswordPage } from "./pages/reset-password";
 import { DashboardLayout } from "./pages/layout";
 import { DashboardHome } from "./pages/dashboard-home";
 import { ProfileEdit } from "./pages/profile-edit";
@@ -56,11 +57,12 @@ function DashboardPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AppRouter() {
+export function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/u/:handle" component={PublicProfile} />
       <Route path="/crew" component={CrewFinder} />
       <Route path="/roadmap" component={RoadmapPage} />
