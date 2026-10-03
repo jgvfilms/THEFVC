@@ -989,12 +989,41 @@ export async function registerRoutes(
     res.json({ activities: sanitized, posts });
   });
 
-  // Authenticated feed ( richer data)
+  // Authenticated feed (richer data than the public feed: all items, plus
+  // the row's own columns such as targetType/targetId and post visibility).
+  //
+  // SECURITY: storage.getFeed/getPosts join the FULL users row onto every
+  // item. This route used to return those rows as-is, which sent each
+  // author's passwordHash, email and googleId to any logged-in member.
+  // Never serialise the joined `user`/`profile` directly: map them through
+  // an explicit allow-list, exactly as the public feed above does.
+  const feedUser = (user?: { handle: string }) => (user ? { handle: user.handle } : null);
+  const feedProfile = (profile?: {
+    displayName: string; role: string | null; city: string | null;
+    avatarUrl: string | null; avatarInitials: string | null;
+  }) => (profile
+    ? {
+        displayName: profile.displayName,
+        role: profile.role,
+        city: profile.city,
+        avatarUrl: profile.avatarUrl,
+        avatarInitials: profile.avatarInitials,
+      }
+    : null);
+
   app.get("/api/feed", requireAuth, async (req: AuthedRequest, res: Response) => {
     const limit = Math.min(getQueryParamInt(req.query, "limit", 0) || 50, 100);
-    const items = storage.getFeed(limit);
-    const posts = storage.getPosts(limit);
-    res.json({ activities: items, posts });
+    const activities = storage.getFeed(limit).map(({ user, profile, ...item }) => ({
+      ...item,
+      user: feedUser(user),
+      profile: feedProfile(profile),
+    }));
+    const posts = storage.getPosts(limit).map(({ user, profile, ...post }) => ({
+      ...post,
+      user: feedUser(user),
+      profile: feedProfile(profile),
+    }));
+    res.json({ activities, posts });
   });
 
   // Create a post

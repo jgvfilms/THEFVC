@@ -630,6 +630,69 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // ===== FEED: privacy =====
+  // Regression test for the feed leak: GET /api/feed returned the full users
+  // row (passwordHash, email, googleId) for every post and activity author.
+  describe("GET /api/feed does not leak account data", () => {
+    it("returns only public fields for other members", async () => {
+      // An author with a post and an activity.
+      const author = storage.createUser({
+        handle: "feedauthor",
+        email: "feed.author@example.test",
+        passwordHash: hashPassword("author-password-123"),
+      });
+      storage.createProfile({
+        userId: author.id,
+        displayName: "Feed Author",
+        role: "Editor",
+        avatarInitials: "FA",
+        skills: "[]",
+        isPublic: true,
+        availability: "available",
+      });
+      storage.createPost({ userId: author.id, body: "hello from the author", linkUrl: null, visibility: "public" });
+      storage.createActivity({
+        type: "member_joined", userId: author.id, targetType: "user", targetId: author.id,
+        message: "just joined thefvc", isPublic: true,
+      });
+
+      // A different, ordinary member reads the feed.
+      const creds = getTestCredentials();
+      storage.createUser({ handle: creds.handle, email: creds.email, passwordHash: hashPassword(creds.password) });
+      const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: creds.email, password: creds.password }),
+      });
+      const { token } = await loginRes.json();
+
+      const res = await fetch(`${baseUrl}/api/feed`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      const body = JSON.parse(text);
+
+      // The feed still carries what the clients render.
+      expect(body.posts.length).toBe(1);
+      expect(body.activities.length).toBe(1);
+      expect(body.posts[0].body).toBe("hello from the author");
+      expect(body.posts[0].user).toEqual({ handle: "feedauthor" });
+      expect(body.activities[0].user).toEqual({ handle: "feedauthor" });
+      expect(body.posts[0].profile.displayName).toBe("Feed Author");
+      expect(Object.keys(body.posts[0].profile).sort()).toEqual(
+        ["avatarInitials", "avatarUrl", "city", "displayName", "role"],
+      );
+
+      // Nothing private, anywhere in the response.
+      for (const forbidden of [
+        "passwordHash", "password_hash", "googleId", "invitedBy", "lastLoginAt",
+        "feed.author@example.test", author.passwordHash,
+        "stripeCustomerId", "stripeConnectAccountId",
+      ]) {
+        expect(text).not.toContain(forbidden);
+      }
+    });
+  });
+
   // ===== FEED: Create Post =====
   describe("POST /api/feed/posts (authenticated)", () => {
     it("should reject without auth", async () => {
