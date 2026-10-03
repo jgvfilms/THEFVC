@@ -54,6 +54,10 @@ function GoogleButton({ label, inviteToken }: { label: string; inviteToken: stri
   );
 }
 
+// Off until the signup flow is verified end to end. Flip to true to reopen
+// invite-based signup on /auth.
+const SIGNUP_ENABLED = false;
+
 export function AuthPage() {
   const { login, signup, adoptToken } = useAuth();
   const { toast } = useToast();
@@ -118,11 +122,14 @@ export function AuthPage() {
     }
   }, []);
 
-  // Parse invite token from the URL query string
+  // Parse invite token from the URL query string. While SIGNUP_ENABLED is
+  // false, invite links land on plain login so no path reaches the signup form.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("invite");
-    if (token) {
+    if (token && !SIGNUP_ENABLED) {
+      toast({ title: "Sign-up is coming soon" });
+    } else if (token) {
       setInviteToken(token);
       setMode("signup");
       // Validate the invite

@@ -69,9 +69,12 @@ test.describe("Landing Page", () => {
     await expect(page).toHaveURL(/\/auth/);
   });
 
-  test("should navigate to auth page when clicking join", async ({ page }) => {
-    await page.click('[data-testid="cta-signup"]');
-    await expect(page).toHaveURL(/\/auth/);
+  test("join button is disabled and reads COMING SOON on hover", async ({ page }) => {
+    const join = page.locator('[data-testid="cta-signup"]');
+    await join.hover();
+    await expect(join.locator(".soon-hover")).toBeVisible();
+    await join.click();
+    await expect(page).not.toHaveURL(/\/auth/);
   });
 
   test("should navigate to crew finder when clicking find crew", async ({ page }) => {

@@ -40,6 +40,22 @@ function Dot() {
 }
 
 /** Nav + footer shared by the landing page and the pages moved off it. */
+// Signup is closed for now: signup buttons stay on the page but don't link
+// anywhere, and read "COMING SOON" on hover or focus.
+function ComingSoonButton({ label, variant = "btn-primary", testId }: { label: string; variant?: string; testId?: string }) {
+  return (
+    <span className={`btn ${variant} btn-soon`} role="link" aria-disabled="true" tabIndex={0}
+      aria-label={`${label}, coming soon`} data-testid={testId}>
+      <span className="soon-default" aria-hidden="true">{label}</span>
+      <span className="soon-hover" aria-hidden="true">COMING SOON</span>
+    </span>
+  );
+}
+
+function JoinComingSoon({ testId }: { testId: string }) {
+  return <ComingSoonButton label="Join THE FVC" testId={testId} />;
+}
+
 export function LandingShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   return (
@@ -59,7 +75,7 @@ export function LandingShell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 <Link href="/auth" className="nav-login" data-testid="link-login">Log In</Link>
-                <Link href="/auth" className="btn btn-primary" data-testid="link-signup">Join THE FVC</Link>
+                <JoinComingSoon testId="link-signup" />
               </>
             )}
           </div>
@@ -102,7 +118,7 @@ export function Landing() {
             </p>
             <div className="cta-row">
               <div className="cta-stack">
-                <Link href="/auth" className="btn btn-primary" data-testid="cta-signup">Join THE FVC</Link>
+                <JoinComingSoon testId="cta-signup" />
                 <span className="cta-note">Free to get started</span>
               </div>
               <Link href="/crew" className="btn btn-ghost" data-testid="cta-browse">Find Your Crew</Link>
@@ -292,7 +308,7 @@ export function Landing() {
                 <ul>
                   {plan.features.map((f) => <li key={f}>{f}</li>)}
                 </ul>
-                <Link href="/auth" className={`btn ${plan.primary ? "btn-primary" : "btn-ghost"}`}>{plan.cta}</Link>
+                <ComingSoonButton label={plan.cta} variant={plan.primary ? "btn-primary" : "btn-ghost"} testId={`pricing-cta-${plan.id}`} />
               </div>
             ))}
           </div>
@@ -306,7 +322,7 @@ export function Landing() {
           <div className="closing-side">
             <p>Find your collaborators and bring your next production together on FVC.</p>
             <div className="cta-row" style={{ alignItems: "center" }}>
-              <Link href="/auth" className="btn btn-primary" data-testid="cta-final">Join THE FVC</Link>
+              <JoinComingSoon testId="cta-final" />
               <Link href="/crew" className="textlink">Browse Crew</Link>
             </div>
           </div>
