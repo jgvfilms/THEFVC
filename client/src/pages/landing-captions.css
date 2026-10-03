@@ -1,0 +1,57 @@
+/* "Captions" look for the public landing shell (landing, roadmap, news).
+   Loaded after landing.css and only overrides it: dark ground, caption-yellow
+   accent, DM Sans / DM Mono, headlines set in subtitle-style caption boxes.
+   To return to the ivory editorial look, remove this file's import in landing.tsx. */
+.fvc-lp {
+  --paper: #0b0b0c;
+  --paper-2: #1a1a1d;
+  --ink: #f2ede4;
+  --ink-2: #a39d92;
+  --rule: #3a3833;
+  --signal: #ffe600;
+  --signal-ink: #0b0b0c;
+  --frame: #1a1a1d;
+  --ok: #7bd88f;
+  --panel: #141416;
+  --f-display: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+
+/* Wordmark: written like a caption's sound cue, brackets included. */
+.fvc-lp .logo { font: 700 1.5rem/1 var(--f-display); letter-spacing: -.02em; text-transform: none; color: var(--signal); }
+
+/* Headlines: sentence case; .cap wraps the text in a caption box per line. */
+.fvc-lp .display { font-weight: 700; text-transform: none; line-height: 1.12; letter-spacing: -.02em; }
+.fvc-lp .display .cap { background: var(--signal); color: var(--signal-ink); padding: .08em .32em; line-height: 1.45;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.fvc-lp .display .cap .dot { color: inherit; }
+.fvc-lp .hero h1 { font-size: clamp(2.2rem, 12.5cqi, 4.9rem); }
+.fvc-lp .sec-head h2 { font-size: clamp(1.8rem, 3.8vw, 3.2rem); }
+.fvc-lp .spread-text h3 { font-size: clamp(1.7rem, 3vw, 2.6rem); }
+.fvc-lp .closing h2 { font-size: clamp(1.9rem, 3.7vw, 3.2rem); }
+.fvc-lp .closing { align-items: center; }
+
+/* Section labels read as sound cues: [how it works] */
+.fvc-lp .hero-copy > .label, .fvc-lp .sec-head .label, .fvc-lp .spread-text .label {
+  font-size: .82rem; text-transform: lowercase; color: var(--signal); }
+.fvc-lp .hero-copy > .label b, .fvc-lp .sec-head .label b, .fvc-lp .spread-text .label b { color: var(--signal); }
+.fvc-lp .hero-copy > .label::before, .fvc-lp .sec-head .label::before, .fvc-lp .spread-text .label::before { content: "["; }
+.fvc-lp .hero-copy > .label::after, .fvc-lp .sec-head .label::after, .fvc-lp .spread-text .label::after { content: "]"; }
+.fvc-lp .sec-head .label { border-top-color: var(--signal); }
+
+/* Buttons: square, heavy; yellow is the one loud thing on screen. */
+.fvc-lp .btn { border-radius: 0; font-weight: 700; }
+
+/* Small titles set for a condensed face read better in sentence case here. */
+.fvc-lp .prod-title, .fvc-lp .view-h h3, .fvc-lp .plan h3, .fvc-lp .phase h3 { font-weight: 700; text-transform: none; letter-spacing: -.01em; }
+.fvc-lp .prod-title { font-size: 1.35rem; }
+.fvc-lp .view-h h3 { font-size: 1.1rem; }
+.fvc-lp .plan h3 { font-size: 1.7rem; }
+.fvc-lp .plate-fig { font-weight: 700; font-size: .9rem; }
+
+/* Pieces that assumed dark-on-light. */
+.fvc-lp .avatar { background: var(--signal); color: var(--signal-ink); font-weight: 700; font-size: .95rem; }
+.fvc-lp .peek { box-shadow: 8px 8px 0 var(--signal); }
+@media (max-width: 900px) { .fvc-lp .peek { box-shadow: 5px 5px 0 var(--signal); } }

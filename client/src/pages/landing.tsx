@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import "./landing.css";
+import "./landing-captions.css";
 
 // Plans are written into the page because production has no subscription_tiers
 // rows yet, so /api/subscription-tiers returns []. Prices are intentionally
@@ -47,7 +48,7 @@ export function LandingShell({ children }: { children: React.ReactNode }) {
       <a className="skip" href="#main">Skip to content</a>
       <header className="nav">
         <div className="wrap nav-in">
-          <Link href="/" className="logo" aria-label="THEFVC.IS home">THEFVC<Dot />IS</Link>
+          <Link href="/" className="logo" aria-label="THEFVC.IS home">[THE FVC]</Link>
           <nav className="nav-links" aria-label="Primary">
             <Link href="/crew" data-testid="link-crew">Find Crew</Link>
             <a href="/#how">How It Works</a>
@@ -70,7 +71,7 @@ export function LandingShell({ children }: { children: React.ReactNode }) {
 
       <footer>
         <div className="wrap foot">
-          <Link href="/" className="logo">THEFVC<Dot />IS</Link>
+          <Link href="/" className="logo">[THE FVC]</Link>
           <nav aria-label="Footer">
             <Link href="/crew">Find Crew</Link>
             <a href="/#how">How It Works</a>
@@ -95,7 +96,7 @@ export function Landing() {
           <div className="hero-copy">
             <p className="label" data-testid="badge-beta">Film Video Collective / <b>Early Access</b></p>
             <h1 id="hero-title" className="display" data-testid="hero-title">
-              Independent<br />doesn’t mean<br />alone<Dot />
+              <span className="cap">Independent<br />doesn’t mean<br />alone<Dot /></span>
             </h1>
             <p className="lede" data-testid="hero-subtitle">
               Find your crew. Bring your production together. Keep the work moving. FVC gives independent filmmakers a shared place to make it happen.
@@ -146,7 +147,7 @@ export function Landing() {
         <div className="wrap">
           <div className="sec-head">
             <p className="label">One production, three views</p>
-            <h2 id="product-title" className="display">The people. The plan.<br />The production<Dot /></h2>
+            <h2 id="product-title" className="display"><span className="cap">The people. The plan.<br />The production<Dot /></span></h2>
           </div>
 
           <div className="prod" aria-label="Sample production: Salt Flats">
@@ -197,7 +198,7 @@ export function Landing() {
               </div>
             </div>
           </div>
-          <p className="prod-caption">The same crew, from booking to payment. Names marked in orange appear in both the crew list and the payment log.</p>
+          <p className="prod-caption">The same crew, from booking to payment. Names marked in yellow appear in both the crew list and the payment log.</p>
         </div>
       </section>
 
@@ -206,7 +207,7 @@ export function Landing() {
         <div className="wrap">
           <div className="sec-head">
             <p className="label">How it works</p>
-            <h2 id="how-title" className="display">From first call<br />to final payment<Dot /></h2>
+            <h2 id="how-title" className="display"><span className="cap">From first call<br />to final payment<Dot /></span></h2>
           </div>
 
           <article className="spread" data-testid="step-crew">
@@ -281,7 +282,7 @@ export function Landing() {
         <div className="wrap">
           <div className="sec-head">
             <p className="label">Pricing</p>
-            <h2 id="pricing-title" className="display" data-testid="pricing-title">Room for your first project.<br />And the next one<Dot /></h2>
+            <h2 id="pricing-title" className="display" data-testid="pricing-title"><span className="cap">Room for your first project.<br />And the next one<Dot /></span></h2>
           </div>
           <div className="plans">
             {PLANS.map((plan) => (
@@ -302,7 +303,7 @@ export function Landing() {
       {/* CLOSING */}
       <section className="band" aria-labelledby="closing-title">
         <div className="wrap closing">
-          <h2 id="closing-title" className="display" data-testid="cta-title">Your next film starts<br />with your people<Dot /></h2>
+          <h2 id="closing-title" className="display" data-testid="cta-title"><span className="cap">Your next film starts<br />with your people<Dot /></span></h2>
           <div className="closing-side">
             <p>Find your collaborators and bring your next production together on FVC.</p>
             <div className="cta-row" style={{ alignItems: "center" }}>
