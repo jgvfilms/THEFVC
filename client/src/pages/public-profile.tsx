@@ -3,13 +3,8 @@ import { useEffect } from "react";
 import { Link, useParams } from "wouter";
 import { apiRequestJson, assetUrl } from "@/lib/queryClient";
 import { getVideoEmbedUrl } from "@/lib/video";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, DollarSign, Film, ArrowLeft, ExternalLink, Instagram, Youtube, Linkedin, Music2, Video } from "lucide-react";
 import type { Profile, Credit } from "@shared/schema";
+import { LandingShell } from "./landing";
 
 // PRD-006: Public profile SEO — set meta tags dynamically
 function setProfileMeta(profile: Profile) {
@@ -64,19 +59,16 @@ function setProfileMeta(profile: Profile) {
   }
 }
 
+// Glue an initial to the word after it ("J. Garrett") so the big display name
+// never strands a lone "J." on its own line.
+function keepInitialsTogether(name: string) {
+  return name.replace(/(^|\s)(\p{L}\.)\s+/gu, "$1$2\u00a0");
+}
+
 interface ProfileWithCredits {
   profile: Profile & { handle?: string };
   credits: Credit[];
 }
-
-const THEMES: Record<string, { accent: string; bg: string; cover: string }> = {
-  cinema_gold: { accent: "#e8b339", bg: "from-amber-950/30 to-stone-950", cover: "from-stone-900/60 to-stone-950/80" },
-  warm_sepia: { accent: "#c87f3e", bg: "from-orange-950/30 to-stone-950", cover: "from-orange-950/60 to-stone-950/80" },
-  noir_blue: { accent: "#5b8def", bg: "from-blue-950/30 to-slate-950", cover: "from-blue-950/60 to-slate-950/80" },
-  forest_green: { accent: "#4ade80", bg: "from-green-950/30 to-stone-950", cover: "from-green-950/60 to-stone-950/80" },
-  festival_red: { accent: "#ef4444", bg: "from-red-950/30 to-stone-950", cover: "from-red-950/60 to-stone-950/80" },
-  mono_white: { accent: "#e4e4e7", bg: "from-zinc-800/30 to-zinc-950", cover: "from-zinc-800/60 to-zinc-950/80" },
-};
 
 interface VideoLink {
   provider: string;
@@ -84,16 +76,13 @@ interface VideoLink {
   title: string;
 }
 
-const getEmbedUrl = getVideoEmbedUrl;
-
-const SOCIAL_ICONS: Record<string, typeof Instagram> = {
-  instagram: Instagram,
-  youtube: Youtube,
-  vimeo: Video,
-  tiktok: Music2,
-  twitter: ExternalLink,
-  linkedin: Linkedin,
-};
+interface ImdbCredit {
+  title: string;
+  year: number | null;
+  role: string;
+  rating: string | null;
+  imdbUrl: string | null;
+}
 
 const SOCIAL_LABELS: Record<string, string> = {
   instagram: "Instagram",
@@ -104,6 +93,15 @@ const SOCIAL_LABELS: Record<string, string> = {
   linkedin: "LinkedIn",
 };
 
+const AVAILABILITY_LABELS: Record<string, string> = {
+  available: "Available",
+  booked: "Booked",
+  unavailable: "Unavailable",
+};
+
+// Public profiles share the landing page's look so the brand reads the same
+// everywhere a visitor lands. Members' theme presets were built for the dark
+// app and aren't applied here.
 export function PublicProfile() {
   const { handle } = useParams<{ handle: string }>();
 
@@ -121,25 +119,24 @@ export function PublicProfile() {
 
   if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto py-8 space-y-4">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </div>
+      <LandingShell>
+        <section className="wrap page-body" aria-busy="true">
+          <p className="label">Loading profile…</p>
+        </section>
+      </LandingShell>
     );
   }
 
   if (!data?.profile) {
     return (
-      <div className="max-w-md mx-auto py-20 text-center space-y-3">
-        <Film className="h-10 w-10 text-muted-foreground mx-auto" />
-        <h1 className="font-display text-xl font-semibold">Profile not found</h1>
-        <p className="text-sm text-muted-foreground">
-          @{handle} hasn't claimed their page yet.
-        </p>
-        <Link href="/crew">
-          <Button variant="outline" size="sm">Browse crew</Button>
-        </Link>
-      </div>
+      <LandingShell>
+        <section className="wrap page-body pp-missing" aria-labelledby="pp-missing-title">
+          <p className="label">Crew profile</p>
+          <h1 id="pp-missing-title" className="display">Profile not found<span className="dot">.</span></h1>
+          <p className="note">@{handle} hasn't claimed their page yet.</p>
+          <Link href="/crew" className="btn btn-ghost">Browse crew</Link>
+        </section>
+      </LandingShell>
     );
   }
 
@@ -147,312 +144,187 @@ export function PublicProfile() {
   const skills: string[] = profile.skills ? JSON.parse(profile.skills) : [];
   const videoLinks: VideoLink[] = profile.videoLinks ? JSON.parse(profile.videoLinks) : [];
   // Show the reel inline rather than as a link off-site. Only when it's
-  // actually embeddable — otherwise it stays a button under Quick Links.
+  // actually embeddable — otherwise it stays a button with the other links.
   const reelEmbeddable = !!profile.reelUrl && !!getVideoEmbedUrl(profile.reelUrl);
   const reels: VideoLink[] = reelEmbeddable
     ? [{ provider: "reel", url: profile.reelUrl!, title: "Reel" }, ...videoLinks]
     : videoLinks;
   const socialLinks: Record<string, string> = profile.socialLinks ? JSON.parse(profile.socialLinks) : {};
-  const theme = THEMES[profile.themePreset || "cinema_gold"] || THEMES.cinema_gold;
+  const socials = Object.entries(socialLinks).filter(([, url]) => url);
+  const initials = profile.avatarInitials || profile.displayName.slice(0, 2).toUpperCase();
+  const place = profile.city ? `${profile.city}${profile.state ? `, ${profile.state}` : ""}` : null;
+
+  const imdbCredits: ImdbCredit[] = profile.imdbCredits ? JSON.parse(profile.imdbCredits) : [];
+  const byTitle = new Map<string, { title: string; year: number | null; roles: string[]; rating: string | null; imdbUrl: string | null }>();
+  for (const c of imdbCredits) {
+    if (!byTitle.has(c.title)) byTitle.set(c.title, { title: c.title, year: c.year, roles: [], rating: c.rating, imdbUrl: c.imdbUrl });
+    byTitle.get(c.title)!.roles.push(c.role);
+  }
+  const filmCredits = Array.from(byTitle.values()).sort((a, b) => (b.year || 0) - (a.year || 0));
 
   return (
-    <div className="max-w-2xl mx-auto py-6 space-y-0">
-      <Link href="/crew">
-        <Button variant="ghost" size="sm" className="mb-4" data-testid="button-back-crew">
-          <ArrowLeft className="h-3 w-3 mr-1" /> Back to Crew Finder
-        </Button>
-      </Link>
-
-      {/* Cover + Avatar with theme */}
-      <Card className={`overflow-hidden bg-gradient-to-br ${theme.bg}`} style={{ borderColor: `${theme.accent}30` }}>
-        {/* Cover photo */}
-        <div className="h-40 relative overflow-hidden">
-          {profile.coverUrl ? (
-            <img src={assetUrl(profile.coverUrl)} alt="Cover" className="w-full h-full object-cover" data-testid="img-cover" />
-          ) : (
-            <div className={`w-full h-full bg-gradient-to-br ${theme.cover}`} />
-          )}
-          <div className={`absolute inset-0 bg-gradient-to-b ${theme.cover}`} />
+    <LandingShell>
+      <section className="hero" aria-labelledby="pp-name">
+        <div className="wrap pp-back">
+          <Link href="/crew" className="label pp-backlink" data-testid="button-back-crew">← Crew directory</Link>
         </div>
-
-        <CardContent className="pt-0 -mt-14 relative">
-          <div className="flex items-end gap-4">
-            {/* Avatar */}
-            {profile.avatarUrl ? (
-              <img
-                src={assetUrl(profile.avatarUrl)}
-                alt={profile.displayName}
-                className="w-24 h-24 rounded-full border-4 object-cover flex-shrink-0"
-                style={{ borderColor: theme.accent }}
-                data-testid="img-profile-avatar"
-              />
-            ) : (
-              <Avatar
-                className="w-24 h-24 border-4 flex-shrink-0"
-                style={{ borderColor: theme.accent }}
-              >
-                <AvatarFallback
-                  className="text-xl font-semibold"
-                  style={{ backgroundColor: `${theme.accent}20`, color: theme.accent }}
-                >
-                  {profile.avatarInitials || profile.displayName.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            )}
-            <div className="flex-1 pb-2">
-              <h1 className="font-display text-xl font-bold" data-testid="text-profile-name">
-                {profile.displayName}
-              </h1>
-              <p className="text-sm text-muted-foreground" data-testid="text-profile-role">
-                {profile.role}
-              </p>
-            </div>
-          </div>
-
-          {/* Location & rate */}
-          <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
-            {profile.city && (
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
-                {profile.city}{profile.state ? `, ${profile.state}` : ""}
-              </span>
-            )}
-            {profile.dayRate && (
-              <span className="flex items-center gap-1">
-                <DollarSign className="h-3 w-3" />
-                ${profile.dayRate}/day
-              </span>
-            )}
-            {profile.availability && (
-              <Badge
-                variant={profile.availability === "available" ? "default" : "secondary"}
-                style={profile.availability === "available" ? { backgroundColor: theme.accent, color: "#0a0a0b" } : {}}
-                data-testid="badge-availability"
-              >
-                {profile.availability}
-              </Badge>
-            )}
-          </div>
-
-          {/* Bio */}
-          {profile.bio && (
-            <p className="mt-4 text-sm leading-relaxed" data-testid="text-profile-bio">
-              {profile.bio}
-            </p>
-          )}
-
-          {/* Skills */}
-          {skills.length > 0 && (
-            <div className="mt-4">
-              <h3 className="text-xs font-medium text-muted-foreground mb-2">Skills & Equipment</h3>
-              <div className="flex flex-wrap gap-2">
-                {skills.map((skill) => (
-                  <Badge
-                    key={skill}
-                    variant="secondary"
-                    style={{ backgroundColor: `${theme.accent}15`, color: theme.accent }}
-                  >
-                    {skill}
-                  </Badge>
-                ))}
+        <div className="wrap hero-grid pp-hero">
+          <div className="hero-copy">
+            <div className="pp-id">
+              {profile.avatarUrl
+                ? <img className="pp-avatar" src={assetUrl(profile.avatarUrl)} alt={profile.displayName} data-testid="img-profile-avatar" />
+                : <span className="pp-avatar" aria-hidden="true">{initials}</span>}
+              <div>
+                <p className="label">Crew profile / <b>thefvc.is/{handle}</b></p>
+                <p className="pp-role" data-testid="text-profile-role">{profile.role}</p>
               </div>
             </div>
-          )}
+            <h1 id="pp-name" className="display pp-name" data-testid="text-profile-name">
+              {keepInitialsTogether(profile.displayName)}<span className="dot">.</span>
+            </h1>
 
-          {/* Social Links */}
-          {Object.keys(socialLinks).length > 0 && (
-            <div className="mt-4">
-              <h3 className="text-xs font-medium text-muted-foreground mb-2">Social</h3>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(socialLinks).filter(([, url]) => url).map(([platform, url]) => {
-                  const Icon = SOCIAL_ICONS[platform] || ExternalLink;
-                  const label = SOCIAL_LABELS[platform] || platform;
-                  return (
-                    <a key={platform} href={url} target="_blank" rel="noopener noreferrer" data-testid={`link-social-${platform}`}>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Icon className="h-3.5 w-3.5" style={{ color: theme.accent }} />
-                        {label}
-                      </Button>
-                    </a>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            {profile.bio && <p className="lede pp-bio" data-testid="text-profile-bio">{profile.bio}</p>}
 
-          {/* Quick Links */}
-          {((profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {profile.reelUrl && !reelEmbeddable && (
-                <a href={profile.reelUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" size="sm" data-testid="link-reel">
-                    <ExternalLink className="h-3 w-3 mr-1" /> Reel
-                  </Button>
-                </a>
-              )}
-              {profile.imdbUrl && (
-                <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" size="sm" data-testid="link-imdb">
-                    IMDb
-                  </Button>
-                </a>
-              )}
-              {profile.websiteUrl && (
-                <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" size="sm" data-testid="link-website">
-                    Website
-                  </Button>
-                </a>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Video Embeds */}
-      {reels.length > 0 && (
-        <div className="mt-4 space-y-4">
-          <h3 className="font-display text-base font-semibold px-1">Reels & Work</h3>
-          {reels.map((video, idx) => {
-            const embedUrl = getEmbedUrl(video.url);
-            return (
-              <Card key={idx} data-testid={`video-${idx}`}>
-                <CardContent className="p-0 overflow-hidden">
-                  {embedUrl ? (
-                    <div className="aspect-video">
-                      <iframe
-                        src={embedUrl}
-                        title={video.title || `Video ${idx + 1}`}
-                        className="w-full h-full"
-                        frameBorder="0"
-                        allow="autoplay; fullscreen; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
-                  ) : (
-                    <a href={video.url} target="_blank" rel="noopener noreferrer" className="block p-4 hover:bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <ExternalLink className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-medium">{video.title || video.url}</span>
-                      </div>
-                    </a>
-                  )}
-                  {video.title && embedUrl && (
-                    <p className="text-sm font-medium p-3 border-t border-border">{video.title}</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* IMDb Credits */}
-      {(() => {
-        const imdbCredits: Array<{ title: string; year: number | null; role: string; rating: string | null; imdbUrl: string | null }> =
-          profile.imdbCredits ? JSON.parse(profile.imdbCredits) : [];
-        if (imdbCredits.length === 0) return null;
-        // Group by title
-        const byTitle = new Map<string, { title: string; year: number | null; roles: string[]; rating: string | null; imdbUrl: string | null }>();
-        for (const c of imdbCredits) {
-          const key = c.title;
-          if (!byTitle.has(key)) {
-            byTitle.set(key, { title: c.title, year: c.year, roles: [], rating: c.rating, imdbUrl: c.imdbUrl });
-          }
-          byTitle.get(key)!.roles.push(c.role);
-        }
-        const grouped = Array.from(byTitle.values()).sort((a, b) => (b.year || 0) - (a.year || 0));
-        return (
-          <Card className="mt-4">
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-display text-base font-semibold flex items-center gap-2">
-                  <Film className="h-4 w-4" style={{ color: theme.accent }} />
-                  Film Credits
-                </h3>
-                {profile.imdbUrl && (
-                  <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer">
-                    <Badge variant="outline" className="text-xs" style={{ borderColor: `${theme.accent}40`, color: theme.accent }}>
-                      IMDb
-                    </Badge>
-                  </a>
+            {(place || profile.dayRate || profile.availability) && (
+              <dl className="facts pp-facts">
+                {place && <><dt>Based in</dt><dd>{place}</dd></>}
+                {profile.dayRate && <><dt>Day rate</dt><dd className="num">${profile.dayRate}/day</dd></>}
+                {profile.availability && (
+                  <><dt>Availability</dt><dd>
+                    <span className={`chip ${profile.availability === "available" ? "ok" : "wait"}`} data-testid="badge-availability">
+                      {AVAILABILITY_LABELS[profile.availability] || profile.availability}
+                    </span>
+                  </dd></>
                 )}
-              </div>
-              <div className="space-y-2">
-                {grouped.map((credit, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                    data-testid={`imdb-credit-${idx}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      {credit.imdbUrl ? (
-                        <a href={credit.imdbUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline truncate block">
-                          {credit.title}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium truncate">{credit.title}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground">{credit.roles.join(', ')}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      {credit.rating && (
-                        <Badge variant="secondary" className="text-xs" style={{ backgroundColor: `${theme.accent}15`, color: theme.accent }}>
-                          ⭐ {credit.rating}
-                        </Badge>
-                      )}
-                      {credit.year && (
-                        <span className="text-xs text-muted-foreground">{credit.year}</span>
-                      )}
-                    </div>
-                  </div>
+              </dl>
+            )}
+
+            {(socials.length > 0 || (profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
+              <div className="cta-row">
+                {profile.reelUrl && !reelEmbeddable && (
+                  <a href={profile.reelUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" data-testid="link-reel">Watch reel</a>
+                )}
+                {profile.imdbUrl && (
+                  <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-imdb">IMDb</a>
+                )}
+                {profile.websiteUrl && (
+                  <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-website">Website</a>
+                )}
+                {socials.map(([platform, url]) => (
+                  <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid={`link-social-${platform}`}>
+                    {SOCIAL_LABELS[platform] || platform}
+                  </a>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        );
-      })()}
+            )}
 
-      {/* Credits */}
-      {credits.length > 0 && (
-        <Card className="mt-4">
-          <CardContent className="pt-5">
-            <h3 className="font-display text-base font-semibold mb-3">Credits</h3>
-            <div className="space-y-2">
-              {credits.map((credit) => (
-                <div
-                  key={credit.id}
-                  className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  data-testid={`credit-${credit.id}`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{credit.productionTitle}</p>
-                    <p className="text-xs text-muted-foreground">{credit.role}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {credit.format && (
-                      <Badge variant="outline" className="text-xs">
-                        {credit.format.replace(/_/g, " ")}
-                      </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">{credit.year}</span>
-                    {credit.verified && (
-                      <Badge variant="default" className="text-xs">Verified</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
+            {skills.length > 0 && (
+              <div className="pp-skills">
+                <p className="label">Skills &amp; equipment</p>
+                <div className="tags">{skills.map((s) => <span key={s}>{s}</span>)}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="hero-media">
+            <figure className="plate">
+              <span className="crop tl" aria-hidden="true" />
+              <span className="crop tr" aria-hidden="true" />
+              <span className="crop bl" aria-hidden="true" />
+              <span className="crop br" aria-hidden="true" />
+              {profile.coverUrl
+                ? <img className="photo" src={assetUrl(profile.coverUrl)} alt="" data-testid="img-cover" />
+                : <div className="photo pp-cover-blank" aria-hidden="true">{initials}</div>}
+              <div className="plate-overlay" aria-hidden="true">
+                <div className="plate-folio"><span>THEFVC<b>/</b>IS</span><span>{profile.role}</span></div>
+                {place && <span className="plate-side">{place}</span>}
+                <span className="plate-fig">@{handle}</span>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      {reels.length > 0 && (
+        <section className="band" aria-labelledby="pp-reels">
+          <div className="wrap">
+            <div className="sec-head">
+              <p className="label">Reels &amp; work</p>
+              <h2 id="pp-reels" className="display">The work<span className="dot">.</span></h2>
             </div>
-          </CardContent>
-        </Card>
+            <div className="pp-reels">
+              {reels.map((video, idx) => {
+                const embedUrl = getVideoEmbedUrl(video.url);
+                return (
+                  <figure key={idx} className="card pp-reel" data-testid={`video-${idx}`}>
+                    {embedUrl ? (
+                      <div className="pp-frame">
+                        <iframe src={embedUrl} title={video.title || `Video ${idx + 1}`}
+                          allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+                      </div>
+                    ) : (
+                      <a href={video.url} target="_blank" rel="noopener noreferrer" className="pp-reel-link">{video.title || video.url}</a>
+                    )}
+                    {video.title && embedUrl && <figcaption className="label">{video.title}</figcaption>}
+                  </figure>
+                );
+              })}
+            </div>
+          </div>
+        </section>
       )}
 
-      {/* CTA */}
-      <div className="mt-6 text-center">
-        <p className="text-xs text-muted-foreground">
-          Claimed at <span className="font-mono" style={{ color: theme.accent }}>thefvc.is/{handle}</span>
-        </p>
-      </div>
-    </div>
+      {(filmCredits.length > 0 || credits.length > 0) && (
+        <section className="band" aria-labelledby="pp-credits">
+          <div className="wrap">
+            <div className="sec-head">
+              <p className="label">Credits</p>
+              <h2 id="pp-credits" className="display">Filmography<span className="dot">.</span></h2>
+            </div>
+            <div className="pp-credit-cols">
+              {filmCredits.length > 0 && (
+                <div className="card">
+                  <div className="card-h">
+                    <p className="label"><b>Film credits</b></p>
+                    {profile.imdbUrl && <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer" className="sample-tag">IMDb</a>}
+                  </div>
+                  <ul className="rows">
+                    {filmCredits.map((credit, idx) => (
+                      <li key={idx} data-testid={`imdb-credit-${idx}`}>
+                        {credit.imdbUrl
+                          ? <a href={credit.imdbUrl} target="_blank" rel="noopener noreferrer" className="n pp-credit-title">{credit.title}</a>
+                          : <span className="n">{credit.title}</span>}
+                        <span className="s">{credit.roles.join(", ")}</span>
+                        <span className="r">
+                          {credit.year && <span className="num">{credit.year}</span>}
+                          {credit.rating && <span className="chip">★ {credit.rating}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {credits.length > 0 && (
+                <div className="card">
+                  <div className="card-h"><p className="label"><b>FVC credits</b></p></div>
+                  <ul className="rows">
+                    {credits.map((credit) => (
+                      <li key={credit.id} data-testid={`credit-${credit.id}`}>
+                        <span className="n">{credit.productionTitle}</span>
+                        <span className="s">{credit.role}{credit.format ? ` · ${credit.format.replace(/_/g, " ")}` : ""}</span>
+                        <span className="r">
+                          <span className="num">{credit.year}</span>
+                          {credit.verified && <span className="chip ok">Verified</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+    </LandingShell>
   );
 }

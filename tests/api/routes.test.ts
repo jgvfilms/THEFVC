@@ -43,6 +43,19 @@ describe("API Integration Tests", () => {
     }
   });
 
+  // ===== Security headers =====
+  it("CSP lets profile pages embed YouTube and Vimeo reels, and nothing else", async () => {
+    const res = await fetch(`${baseUrl}/api/health`);
+    const csp = res.headers.get("content-security-policy") || "";
+    const frameSrc = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith("frame-src")) || "";
+    expect(frameSrc.split(/\s+/).slice(1).sort()).toEqual([
+      "https://player.vimeo.com",
+      "https://www.youtube-nocookie.com",
+      "https://www.youtube.com",
+    ]);
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
   // ===== AUTH: Signup =====
   describe("POST /api/auth/signup", () => {
     it("should refuse all signups while SIGNUP_ENABLED is not 'true'", async () => {
