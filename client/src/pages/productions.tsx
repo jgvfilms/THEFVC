@@ -29,7 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
   pre_production: "Pre-Production",
   in_production: "In Production",
   post: "Post-Production",
-  wrapped: "Wrapped",
+  wrapped: "Complete",
 };
 
 export function ProductionsList() {

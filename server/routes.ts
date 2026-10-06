@@ -25,6 +25,18 @@ import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, str
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
 import { Stripe } from "stripe";
+import { z } from "zod";
+
+const productionPatchSchema = z.object({
+  title: z.string().min(1).optional(),
+  type: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  status: z.enum(["pre_production", "in_production", "post", "wrapped"]).optional(),
+  budget: z.number().int().nullable().optional(),
+}).strict();
 
 // ===== AUTH HELPERS (re-exported from middleware/auth.ts) =====
 // hashPassword, verifyPassword, generateToken, SESSION_DURATION
@@ -441,7 +453,13 @@ export async function registerRoutes(
     if (!prod || prod.creatorId !== req.userId) {
       return res.status(403).json({ error: "Not authorized" });
     }
-    const updated = storage.updateProduction(prod.id, req.body);
+    // Allowlist rather than passing req.body through: otherwise a client could
+    // reassign creatorId (ownership) or any other column.
+    const parsed = productionPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid production update" });
+    }
+    const updated = storage.updateProduction(prod.id, parsed.data);
     res.json(updated);
   });
 
