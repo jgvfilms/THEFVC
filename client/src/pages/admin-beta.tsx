@@ -60,7 +60,11 @@ export function AdminBetaPage() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
-    onError: () => toast({ title: "Failed to approve", variant: "destructive" }),
+    onError: (err: unknown) => {
+      // e.g. "Request is not pending" after a double click: the first click worked.
+      toast({ title: parseApiErrorMessage(err, "Failed to approve"), variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
   });
 
   const rejectMutation = useMutation({
@@ -69,6 +73,7 @@ export function AdminBetaPage() {
       toast({ title: "Request rejected" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to reject"), variant: "destructive" }),
   });
 
   const createInviteMutation = useMutation({
@@ -261,10 +266,10 @@ export function AdminBetaPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => approveMutation.mutate(req.id)} data-testid={`button-approve-${req.id}`}>
+                    <Button size="sm" disabled={approveMutation.isPending || rejectMutation.isPending} onClick={() => approveMutation.mutate(req.id)} data-testid={`button-approve-${req.id}`}>
                       <Check className="h-4 w-4 mr-1" /> Approve
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => rejectMutation.mutate(req.id)} data-testid={`button-reject-${req.id}`}>
+                    <Button size="sm" variant="outline" disabled={approveMutation.isPending || rejectMutation.isPending} onClick={() => rejectMutation.mutate(req.id)} data-testid={`button-reject-${req.id}`}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
