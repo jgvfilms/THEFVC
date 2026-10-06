@@ -557,6 +557,36 @@ describe("API Integration Tests", () => {
       }
     });
 
+    it("lets someone whose invite was revoked rejoin, but not a rejected request", async () => {
+      const admin = storage.createUser({
+        handle: "revoker",
+        email: "revoker@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const invited = storage.createBetaRequest({ email: "again@test.com" });
+      const invite = storage.createInvite({ token: "revoked-token", email: "again@test.com", createdBy: admin.id });
+      storage.updateBetaRequest(invited.id, { status: "invited", inviteId: invite.id });
+      storage.revokeInvite(invite.id);
+      const rejected = storage.createBetaRequest({ email: "no@test.com" });
+      storage.updateBetaRequest(rejected.id, { status: "rejected" });
+
+      const post = (email: string) => fetch(`${baseUrl}/api/beta/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, displayName: "Again" }),
+      });
+
+      const rejoin = await post("again@test.com");
+      expect(rejoin.status).toBe(201);
+      const after = storage.getBetaRequest(invited.id);
+      expect(after?.status).toBe("pending");
+      expect(after?.inviteId).toBeNull();
+      expect(storage.getBetaRequests()).toHaveLength(2);
+
+      expect((await post("no@test.com")).status).toBe(409);
+    });
+
     it("treats emails differing only in case as the same request", async () => {
       storage.createBetaRequest({ email: "same@test.com" });
       const res = await fetch(`${baseUrl}/api/beta/request`, {

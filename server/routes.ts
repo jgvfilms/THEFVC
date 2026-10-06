@@ -766,13 +766,22 @@ export async function registerRoutes(
         return res.status(400).json({ error: "A valid email is required" });
       }
 
-      // Check if already requested
+      // Check if already requested. Someone whose invite was revoked (and who
+      // never used it) may rejoin: their request goes back to pending. Rejected
+      // requests stay closed so a turned-down person can't keep re-applying.
       const existing = storage.getBetaRequests().find(r => r.email.toLowerCase() === email);
-      if (existing) {
+      const existingInvite = existing?.inviteId ? storage.getInvites().find(i => i.id === existing.inviteId) : undefined;
+      const canRejoin = existing?.status === "invited" && existingInvite?.status === "revoked";
+      if (existing && !canRejoin) {
         return res.status(409).json({ error: "You're already on the waitlist", status: existing.status });
       }
 
-      const betaReq = storage.createBetaRequest({ email, handle, displayName, role, city, message });
+      const betaReq = existing
+        ? storage.updateBetaRequest(existing.id, {
+            displayName, role, city, message,
+            status: "pending", inviteId: null, approvedAt: null, createdAt: new Date(),
+          })!
+        : storage.createBetaRequest({ email, handle, displayName, role, city, message });
 
       const { queueEmail } = await import("./email/queue");
       const { waitlistConfirmationTemplate, waitlistAdminNoticeTemplate } = await import("./email/templates");
