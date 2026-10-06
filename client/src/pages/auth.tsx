@@ -485,20 +485,6 @@ export function AuthPage() {
           <p className="mt-6 text-muted-foreground">
             Payments, crew discovery, and production management — finally in one place.
           </p>
-          <div className="mt-12 grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">$0</p>
-              <p className="text-xs text-muted-foreground">to start</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">3</p>
-              <p className="text-xs text-muted-foreground">free projects</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">2.5%</p>
-              <p className="text-xs text-muted-foreground">transaction fee</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>
