@@ -1113,6 +1113,37 @@ export async function registerRoutes(
     res.json({ success: true, email });
   });
 
+  // Re-invite someone with a brand-new link. The old invite is revoked (if it
+  // isn't already), so its link stays dead; resending would reuse the token.
+  app.post("/api/admin/beta/invites/:id/reinvite", requireAdmin, async (req: AuthedRequest, res: Response) => {
+    const id = parseInt(String(req.params.id));
+    const old = storage.getInvites().find(i => i.id === id);
+    if (!old) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+    if (old.status === "used" || old.usedCount >= old.maxUses) {
+      return res.status(400).json({ error: "This invite was already used to create an account" });
+    }
+    const email = String(req.body?.email ?? old.email ?? "").trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(email)) {
+      return res.status(400).json({ error: "Enter a valid email address for this invite" });
+    }
+    if (old.status === "active") storage.revokeInvite(old.id);
+    const invite = storage.createInvite({
+      token: randomBytes(32).toString("base64url"),
+      email,
+      displayName: old.displayName ?? undefined,
+      role: old.role ?? undefined,
+      notes: old.notes ?? undefined,
+      createdBy: req.userId!,
+    });
+    // Move the waitlist request over, so signup through the new link marks it activated.
+    const linked = storage.getBetaRequests().find(r => r.inviteId === old.id);
+    if (linked) storage.updateBetaRequest(linked.id, { inviteId: invite.id, status: "invited", email });
+    await emailInvite(invite, email, { reinviteOf: old.id });
+    res.json({ success: true, invite, inviteUrl: `/auth?invite=${invite.token}`, email });
+  });
+
   // Update user access (activate/revoke)
   app.patch("/api/admin/users/:id/access", requireAdmin, async (req: AuthedRequest, res: Response) => {
     const { status } = req.body;

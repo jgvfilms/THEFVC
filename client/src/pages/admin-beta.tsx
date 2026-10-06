@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, Copy, Ban, Mail, MessageSquare, Users, Ticket, Star } from "lucide-react";
+import { Check, X, Copy, Ban, Mail, MessageSquare, Users, Ticket, Star, RotateCcw } from "lucide-react";
 
 interface BetaData {
   seats: { used: number; limit: number; remaining: number };
@@ -123,6 +123,23 @@ export function AdminBetaPage() {
     const who = inv.displayName ? ` for ${inv.displayName}` : "";
     const email = window.prompt(`Send this invite${who} to:`, looksLikeEmail ? inv.email! : "");
     if (email && email.trim()) resendInviteMutation.mutate({ id: inv.id, email: email.trim() });
+  };
+
+  const reinviteMutation = useMutation({
+    mutationFn: ({ id, email }: { id: number; email: string }) =>
+      apiRequestJson<{ email: string }>("POST", `/api/admin/beta/invites/${id}/reinvite`, { email }),
+    onSuccess: (data) => {
+      toast({ title: "New invite sent", description: `Emailed a fresh link to ${data.email}. The old link stays revoked.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to re-invite"), variant: "destructive" }),
+  });
+
+  const reinvite = (inv: { id: number; email: string | null; displayName: string | null }) => {
+    const looksLikeEmail = !!inv.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inv.email);
+    const who = inv.displayName ? ` for ${inv.displayName}` : "";
+    const email = window.prompt(`Email a new invite link${who} to:`, looksLikeEmail ? inv.email! : "");
+    if (email && email.trim()) reinviteMutation.mutate({ id: inv.id, email: email.trim() });
   };
 
   const removeAdminMutation = useMutation({
@@ -372,6 +389,17 @@ export function AdminBetaPage() {
                           data-testid={`button-resend-${inv.id}`}
                         >
                           <Mail className="h-4 w-4 mr-1" /> Resend
+                        </Button>
+                      )}
+                      {inv.status === "revoked" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={reinviteMutation.isPending}
+                          onClick={() => reinvite(inv)}
+                          data-testid={`button-reinvite-${inv.id}`}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1" /> Re-invite
                         </Button>
                       )}
                       {inv.status === "active" && (

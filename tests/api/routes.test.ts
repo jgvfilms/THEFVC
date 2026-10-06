@@ -1302,4 +1302,67 @@ describe("API Integration Tests", () => {
       expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
     });
   });
+
+  // ===== ADMIN: re-invite with a new link =====
+  describe("POST /api/admin/beta/invites/:id/reinvite", () => {
+    async function adminToken() {
+      const admin = storage.createUser({ handle: "reinviter", email: "reinviter@test.com", passwordHash: hashPassword("admin123"), isAdmin: true });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "reinviter@test.com", password: "admin123" }),
+      });
+      return { admin, token: (await res.json()).token as string };
+    }
+    const reinvite = (token: string, id: number, email?: string) =>
+      fetch(`${baseUrl}/api/admin/beta/invites/${id}/reinvite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(email === undefined ? {} : { email }),
+      });
+    const isValid = async (tok: string) => (await fetch(`${baseUrl}/api/beta/invite/${tok}`)).status === 200;
+
+    it("emails a revoked person a new link and keeps the old one dead", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "august-tok", email: "aug@test.com", displayName: "August Person", role: "Gaffer", createdBy: admin.id });
+      const linked = storage.createBetaRequest({ email: "aug@test.com" });
+      storage.updateBetaRequest(linked.id, { status: "invited", inviteId: old.id });
+      storage.revokeInvite(old.id);
+
+      const res = await reinvite(token, old.id);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.invite.token).not.toBe("august-tok");
+      expect(body.invite.displayName).toBe("August Person");
+      expect(body.invite.role).toBe("Gaffer");
+
+      expect(await isValid("august-tok")).toBe(false);
+      expect(await isValid(body.invite.token)).toBe(true);
+      expect(storage.getBetaRequest(linked.id)?.inviteId).toBe(body.invite.id);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("aug@test.com");
+      expect(queued[0].html).toContain(`/auth?invite=${body.invite.token}`);
+      expect(queued[0].html).not.toContain("august-tok");
+    });
+
+    it("revokes an active invite before replacing it, and fixes a bad address", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "active-tok", email: "Name Not Email", createdBy: admin.id });
+
+      expect((await reinvite(token, old.id)).status).toBe(400);
+      const res = await reinvite(token, old.id, "Fixed@Test.com");
+      expect(res.status).toBe(200);
+      expect((await res.json()).email).toBe("fixed@test.com");
+      expect(await isValid("active-tok")).toBe(false);
+    });
+
+    it("refuses to re-invite an invite that was already used", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "used-tok", email: "used@test.com", createdBy: admin.id });
+      storage.updateInvite(old.id, { status: "used", usedCount: 1 });
+      expect((await reinvite(token, old.id)).status).toBe(400);
+    });
+  });
 });
