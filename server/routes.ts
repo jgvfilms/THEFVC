@@ -989,7 +989,14 @@ export async function registerRoutes(
   // Manually create an invite
   app.post("/api/admin/beta/invites", requireAdmin, async (req: AuthedRequest, res: Response) => {
     try {
-      const { email, displayName, role, notes } = req.body;
+      const { displayName, role, notes } = req.body;
+      // Email is optional (a link-only invite to hand out yourself), but if
+      // given it must be a real address: it gets emailed straight away, and a
+      // name typed here is how the old unsendable invites happened.
+      const email = String(req.body.email || "").trim().toLowerCase() || undefined;
+      if (email && !EMAIL_PATTERN.test(email)) {
+        return res.status(400).json({ error: "Enter a valid email address, or leave it blank for a link-only invite" });
+      }
       const token = randomBytes(32).toString("base64url");
       const invite = storage.createInvite({
         token,
@@ -999,7 +1006,8 @@ export async function registerRoutes(
         createdBy: req.userId!,
         notes,
       });
-      res.json({ success: true, invite, inviteUrl: `/auth?invite=${token}` });
+      if (email) await emailInvite(invite, email);
+      res.json({ success: true, invite, inviteUrl: `/auth?invite=${token}`, emailed: !!email });
     } catch (err) {
       res.status(500).json({ error: "Failed to create invite" });
     }

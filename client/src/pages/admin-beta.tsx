@@ -84,7 +84,10 @@ export function AdminBetaPage() {
       notes: inviteNotes || undefined,
     }),
     onSuccess: (data: any) => {
-      toast({ title: "Invite created", description: "Copy the link to share" });
+      toast({
+        title: "Invite created",
+        description: data.emailed ? `Emailed to ${data.invite.email}. The link is below too.` : "No email given: copy the link to share",
+      });
       if (data.inviteUrl) {
         setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }
@@ -92,6 +95,7 @@ export function AdminBetaPage() {
       setShowInviteForm(false);
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to create invite"), variant: "destructive" }),
   });
 
   const revokeInviteMutation = useMutation({
@@ -313,8 +317,8 @@ export function AdminBetaPage() {
             <div className="rounded-lg border border-border bg-card p-4 space-y-3" data-testid="invite-form">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="invEmail">Email (optional)</Label>
-                  <Input id="invEmail" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="filmmaker@email.com" />
+                  <Label htmlFor="invEmail">Email (we email the invite; blank = link only)</Label>
+                  <Input id="invEmail" type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="filmmaker@email.com" />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="invName">Name (optional)</Label>
@@ -330,7 +334,7 @@ export function AdminBetaPage() {
                 </div>
               </div>
               <Button onClick={() => createInviteMutation.mutate()} disabled={createInviteMutation.isPending} data-testid="button-create-invite">
-                {createInviteMutation.isPending ? "Creating..." : "Generate Invite Link"}
+                {createInviteMutation.isPending ? "Creating..." : inviteEmail.trim() ? "Create & Email Invite" : "Generate Invite Link"}
               </Button>
             </div>
           )}

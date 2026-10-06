@@ -755,6 +755,30 @@ describe("API Integration Tests", () => {
       expect(queued[0].html).toContain("/auth?invite=old-tok");
     });
 
+    it("New Invite emails when an address is given, stays link-only when blank, refuses a name", async () => {
+      const { token } = await adminToken();
+      const create = (body: object) => fetch(`${baseUrl}/api/admin/beta/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+
+      const withEmail = await create({ email: "New@Test.com", displayName: "New Person" });
+      expect(withEmail.status).toBe(200);
+      const body = await withEmail.json();
+      expect(body.emailed).toBe(true);
+      expect(body.invite.email).toBe("new@test.com");
+
+      const linkOnly = await create({ displayName: "Hand delivered" });
+      expect((await linkOnly.json()).emailed).toBe(false);
+
+      expect((await create({ email: "Alexander Zito" })).status).toBe(400);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued.map((e) => e.to)).toEqual(["new@test.com"]);
+      expect(queued[0].html).toContain(body.inviteUrl);
+    });
+
     it("refuses revoked invites", async () => {
       const { admin, token } = await adminToken();
       const invite = storage.createInvite({ token: "gone-tok", email: "gone@test.com", createdBy: admin.id });
