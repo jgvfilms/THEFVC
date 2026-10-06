@@ -49,6 +49,10 @@ const BLOCKED_IPS_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "scope", def: "TEXT" },
 ];
 
+const PRODUCTION_COLUMNS: Array<{ name: string; def: string }> = [
+  { name: "cover_url", def: "TEXT" },
+];
+
 const NEW_TABLES = [
   `CREATE TABLE IF NOT EXISTS beta_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,6 +370,15 @@ export function runMigrations() {
     if (!blockedIpsExisting.has(col.name)) {
       sqlite.exec(`ALTER TABLE blocked_ips ADD COLUMN ${col.name} ${col.def}`);
       console.log(`[migration] Added column blocked_ips.${col.name}`);
+    }
+  }
+
+  const productionCols = sqlite.prepare("PRAGMA table_info(productions)").all() as Array<{ name: string }>;
+  const productionExisting = new Set(productionCols.map((c) => c.name));
+  for (const col of PRODUCTION_COLUMNS) {
+    if (!productionExisting.has(col.name)) {
+      sqlite.exec(`ALTER TABLE productions ADD COLUMN ${col.name} ${col.def}`);
+      console.log(`[migration] Added column productions.${col.name}`);
     }
   }
 

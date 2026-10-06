@@ -66,7 +66,7 @@ export interface IStorage {
   getProductionsByUser(userId: number): Production[];
   getProduction(id: number): Production | undefined;
   createProduction(prod: InsertProduction): Production;
-  updateProduction(id: number, data: Partial<InsertProduction>): Production | undefined;
+  updateProduction(id: number, data: Partial<InsertProduction> & { coverUrl?: string | null }): Production | undefined;
 
   // Production Crew
   getCrewByProduction(productionId: number): (ProductionCrew & { profile?: Profile })[];
@@ -350,7 +350,7 @@ export class DatabaseStorage implements IStorage {
     return db.insert(productions).values(prod).returning().get();
   }
 
-  updateProduction(id: number, data: Partial<InsertProduction>): Production | undefined {
+  updateProduction(id: number, data: Partial<InsertProduction> & { coverUrl?: string | null }): Production | undefined {
     db.update(productions).set(data).where(eq(productions.id, id)).run();
     return this.getProduction(id);
   }

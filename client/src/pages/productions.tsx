@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Clapperboard, MapPin, Calendar } from "lucide-react";
 import type { Production } from "@shared/schema";
+import { ProductionThumb } from "@/components/production-thumb";
 
 const PRODUCTION_TYPES = [
   { value: "feature", label: "Feature Film" },
@@ -203,9 +204,7 @@ export function ProductionsList() {
               <Card className="hover:border-primary/40 transition-colors cursor-pointer" data-testid={`card-production-${prod.id}`}>
                 <CardContent className="py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                      <Clapperboard className="h-5 w-5 text-primary" />
-                    </div>
+                    <ProductionThumb coverUrl={prod.coverUrl} />
                     <div>
                       <p className="font-medium" data-testid={`text-prod-title-${prod.id}`}>{prod.title}</p>
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">

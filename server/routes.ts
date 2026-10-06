@@ -6,9 +6,9 @@ import { eq } from "drizzle-orm";
 import { log } from "./lib/logger";
 import { broadcastToUser } from "./ws";
 import multer from "multer";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { PROFILE_UPLOADS_DIR } from "./lib/paths";
+import { PROFILE_UPLOADS_DIR, PRODUCTION_UPLOADS_DIR } from "./lib/paths";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   hashPassword,
@@ -610,6 +610,60 @@ export async function registerRoutes(
     const url = `/uploads/profiles/${req.file.filename}`;
     const updated = storage.updateProfile(req.userId!, { coverUrl: url });
     res.json({ url, profile: updated });
+  });
+
+  // ----- PRODUCTION COVER IMAGES -----
+  // The extension comes from the checked mimetype, never the client's filename,
+  // so an upload can't land on disk as .html or .svg and be served as a page.
+  const COVER_EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+  const productionCoverUpload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => {
+        if (!existsSync(PRODUCTION_UPLOADS_DIR)) mkdirSync(PRODUCTION_UPLOADS_DIR, { recursive: true });
+        cb(null, PRODUCTION_UPLOADS_DIR);
+      },
+      filename: (_req, file, cb) => cb(null, `${randomUUID()}.${COVER_EXTENSIONS[file.mimetype]}`),
+    }),
+    limits: { fileSize: 8 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => cb(null, file.mimetype in COVER_EXTENSIONS),
+  }).single("cover");
+
+  function removeProductionCoverFile(url: string | null) {
+    if (!url?.startsWith("/uploads/productions/")) return;
+    const file = path.join(PRODUCTION_UPLOADS_DIR, path.basename(url));
+    try { unlinkSync(file); } catch { /* already gone */ }
+  }
+
+  // Ownership is checked before multer runs, so nobody else can write files.
+  function requireProductionOwner(req: AuthedRequest, res: Response, next: NextFunction) {
+    const prod = storage.getProduction(parseInt(String(req.params.id)));
+    if (!prod) return res.status(404).json({ error: "Production not found" });
+    if (prod.creatorId !== req.userId) return res.status(403).json({ error: "Not authorized" });
+    next();
+  }
+
+  app.post("/api/productions/:id/cover", requireAuth, requireProductionOwner, (req: AuthedRequest, res: Response) => {
+    productionCoverUpload(req, res, (err: unknown) => {
+      if (err) {
+        const tooBig = err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE";
+        return res.status(400).json({ error: tooBig ? "Image must be 8 MB or smaller" : "Upload failed" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "Choose a JPEG, PNG or WebP image" });
+      }
+      const prod = storage.getProduction(parseInt(String(req.params.id)))!;
+      const url = `/uploads/productions/${req.file.filename}`;
+      const updated = storage.updateProduction(prod.id, { coverUrl: url });
+      removeProductionCoverFile(prod.coverUrl);
+      res.json(updated);
+    });
+  });
+
+  app.delete("/api/productions/:id/cover", requireAuth, requireProductionOwner, (req: AuthedRequest, res: Response) => {
+    const prod = storage.getProduction(parseInt(String(req.params.id)))!;
+    const updated = storage.updateProduction(prod.id, { coverUrl: null });
+    removeProductionCoverFile(prod.coverUrl);
+    res.json(updated);
   });
 
   // ----- PRODUCTIONS -----

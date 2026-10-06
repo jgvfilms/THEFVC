@@ -41,6 +41,10 @@ if (process.env.SIGNUP_ENABLED === undefined) {
 const dbPath = join(tmpdir(), `thefvc-test-${process.pid}-${randomUUID()}.db`);
 process.env.DATABASE_PATH = dbPath;
 
+// Uploads go to a throwaway folder too, never the repo's uploads/.
+const uploadsDir = join(tmpdir(), `thefvc-test-uploads-${process.pid}-${randomUUID()}`);
+process.env.UPLOADS_DIR = uploadsDir;
+
 // Bootstrap the base schema (the tables drizzle-kit push would normally
 // create) before server/migrate.ts opens this file and tries to run its
 // idempotent ALTER TABLE / CREATE TABLE IF NOT EXISTS statements against it.
@@ -57,6 +61,7 @@ afterAll(() => {
     rmSync(dbPath, { force: true });
     rmSync(`${dbPath}-wal`, { force: true });
     rmSync(`${dbPath}-shm`, { force: true });
+    rmSync(uploadsDir, { recursive: true, force: true });
   } catch {
     // Best-effort cleanup — not worth failing the run over a leftover temp file.
   }

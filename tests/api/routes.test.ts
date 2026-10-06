@@ -10,6 +10,8 @@ import { createTestServer, getTestCredentials } from "../server";
 import { storage, db } from "../../server/storage";
 import { hashPassword } from "../../server/middleware/auth";
 import { sql } from "drizzle-orm";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 describe("API Integration Tests", () => {
   let server: Awaited<ReturnType<typeof createTestServer>>;
@@ -1203,6 +1205,88 @@ describe("API Integration Tests", () => {
 
       expect((await patch(prod.id, otherToken, { status: "wrapped" })).status).toBe(403);
       expect(storage.getProduction(prod.id)?.status).toBe("pre_production");
+    });
+  });
+
+  // ===== PRODUCTIONS: cover images =====
+  describe("production cover images", () => {
+    // Smallest valid PNG (1x1); the server checks the declared type, not pixels.
+    const PNG = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+
+    async function login(handle: string) {
+      const user = storage.createUser({ handle, email: `${handle}@test.com`, passwordHash: hashPassword("pw123456") });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "pw123456" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    function upload(id: number, token: string, type = "image/png", name = "cover.png") {
+      const body = new FormData();
+      body.append("cover", new Blob([PNG], { type }), name);
+      return fetch(`${baseUrl}/api/productions/${id}/cover`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+    }
+
+    function onDisk(url: string) {
+      return existsSync(join(process.env.UPLOADS_DIR!, "productions", url.split("/").pop()!));
+    }
+
+    it("lets the owner add, replace and remove a cover, cleaning up old files", async () => {
+      const { user, token } = await login("coverowner");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      const first = await upload(prod.id, token);
+      expect(first.status).toBe(200);
+      const firstUrl = (await first.json()).coverUrl as string;
+      expect(firstUrl).toMatch(/^\/uploads\/productions\/[0-9a-f-]+\.png$/);
+      expect(onDisk(firstUrl)).toBe(true);
+
+      const second = await upload(prod.id, token, "image/jpeg", "still.jpg");
+      const secondUrl = (await second.json()).coverUrl as string;
+      expect(secondUrl).toMatch(/\.jpg$/);
+      expect(onDisk(firstUrl)).toBe(false);
+
+      const removed = await fetch(`${baseUrl}/api/productions/${prod.id}/cover`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(removed.status).toBe(200);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
+      expect(onDisk(secondUrl)).toBe(false);
+    });
+
+    it("names files by their image type, not the uploaded filename", async () => {
+      const { user, token } = await login("covername");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      const res = await upload(prod.id, token, "image/png", "evil.html");
+      expect((await res.json()).coverUrl).toMatch(/\.png$/);
+    });
+
+    it("rejects files that aren't JPEG, PNG or WebP", async () => {
+      const { user, token } = await login("covertype");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      const res = await upload(prod.id, token, "image/svg+xml", "cover.svg");
+      expect(res.status).toBe(400);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
+    });
+
+    it("refuses uploads from someone who doesn't own the production", async () => {
+      const { user } = await login("coverowner2");
+      const { token: otherToken } = await login("coverstranger");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await upload(prod.id, otherToken)).status).toBe(403);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
     });
   });
 });

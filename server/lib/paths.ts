@@ -7,3 +7,4 @@ import { join } from "node:path";
 // same class of bug RATE_LIMIT_DIR already fixes for the rate-limit store.
 export const UPLOADS_ROOT = process.env.UPLOADS_DIR || join(process.cwd(), "uploads");
 export const PROFILE_UPLOADS_DIR = join(UPLOADS_ROOT, "profiles");
+export const PRODUCTION_UPLOADS_DIR = join(UPLOADS_ROOT, "productions");

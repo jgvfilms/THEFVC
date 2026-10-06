@@ -131,6 +131,7 @@ export const productions = sqliteTable("productions", {
   location: text("location"),
   status: text("status").default("pre_production"), // pre_production, in_production, post, wrapped
   budget: integer("budget"),
+  coverUrl: text("cover_url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
