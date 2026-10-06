@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
+import { takeReturnPath } from "@/lib/return-path";
 
 const ROLES = [
   "Director", "Producer", "Director of Photography", "Camera Operator", "1st AC", "2nd AC",
@@ -117,7 +118,7 @@ export function AuthPage() {
       adoptToken(token)
         .then(() => {
           toast({ title: "Welcome back" });
-          navigate("/app");
+          navigate(takeReturnPath());
         })
         .catch(() => toast({ title: "Sign-in failed. Please try again.", variant: "destructive" }))
         .finally(() => setLoading(false));
@@ -186,7 +187,7 @@ export function AuthPage() {
         await login(email, password);
       }
       toast({ title: mode === "signup" ? "Account created" : "Welcome back" });
-      navigate("/app");
+      navigate(takeReturnPath());
     } catch (err: any) {
       let msg = parseApiErrorMessage(err, "Authentication failed");
       if (msg.includes("invite-only")) {

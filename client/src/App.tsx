@@ -25,13 +25,15 @@ import { ProductionDetail } from "./pages/production-detail";
 import { AdminBetaPage } from "./pages/admin-beta";
 import { AdminInvoicesPage } from "./pages/admin-invoices";
 import NotFound from "./pages/not-found";
+import { rememberReturnPath } from "./lib/return-path";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   useEffect(() => {
     if (!user && !loading) {
+      rememberReturnPath(location);
       navigate("/auth");
     }
   }, [user, loading]);
