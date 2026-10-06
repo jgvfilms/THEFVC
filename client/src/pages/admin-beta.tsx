@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, Copy, Ban, MessageSquare, Users, Ticket, Star } from "lucide-react";
+import { Check, X, Copy, Ban, Mail, MessageSquare, Users, Ticket, Star } from "lucide-react";
 
 interface BetaData {
   seats: { used: number; limit: number; remaining: number };
@@ -101,6 +101,25 @@ export function AdminBetaPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
   });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: ({ id, email }: { id: number; email: string }) =>
+      apiRequestJson<{ email: string }>("POST", `/api/admin/beta/invites/${id}/resend`, { email }),
+    onSuccess: (data) => {
+      toast({ title: "Invite sent", description: `Emailed to ${data.email}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to resend invite"), variant: "destructive" }),
+  });
+
+  // Asks for the address with the current one filled in, so a name typed into
+  // the email field (old manual invites) can be corrected before sending.
+  const resendInvite = (inv: { id: number; email: string | null; displayName: string | null }) => {
+    const looksLikeEmail = !!inv.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inv.email);
+    const who = inv.displayName ? ` for ${inv.displayName}` : "";
+    const email = window.prompt(`Send this invite${who} to:`, looksLikeEmail ? inv.email! : "");
+    if (email && email.trim()) resendInviteMutation.mutate({ id: inv.id, email: email.trim() });
+  };
 
   const removeAdminMutation = useMutation({
     mutationFn: (id: number) => apiRequestJson("POST", `/api/admin/users/${id}/remove-admin`),
@@ -340,6 +359,17 @@ export function AdminBetaPage() {
                       <Button size="sm" variant="ghost" onClick={() => copyToClipboard(url)} data-testid={`button-copy-${inv.id}`}>
                         <Copy className="h-4 w-4" />
                       </Button>
+                      {inv.status === "active" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resendInviteMutation.isPending}
+                          onClick={() => resendInvite(inv)}
+                          data-testid={`button-resend-${inv.id}`}
+                        >
+                          <Mail className="h-4 w-4 mr-1" /> Resend
+                        </Button>
+                      )}
                       {inv.status === "active" && (
                         <Button size="sm" variant="ghost" onClick={() => revokeInviteMutation.mutate(inv.id)} data-testid={`button-revoke-${inv.id}`}>
                           <Ban className="h-4 w-4 text-destructive" />

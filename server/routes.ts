@@ -41,6 +41,29 @@ import { Stripe } from "stripe";
 // authMiddleware, requireAuth, requireAdmin, AuthedRequest
 
 const BETA_SEAT_LIMIT = 50;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Queue the "You're invited" email carrying this invite's signup link. */
+async function emailInvite(
+  invite: { id: number; token: string; displayName: string | null; role: string | null },
+  to: string,
+  metadata: Record<string, unknown> = {},
+) {
+  const { queueEmail } = await import("./email/queue");
+  const { betaInviteTemplate } = await import("./email/templates");
+  const tpl = betaInviteTemplate({
+    inviteUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/auth?invite=${invite.token}`,
+    displayName: invite.displayName,
+    role: invite.role,
+  });
+  queueEmail({
+    to,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
+    metadata: { type: "beta_invite", inviteId: invite.id, ...metadata },
+  });
+}
 
 // Handles are served as bare top-level URLs (thefvc.is/<handle>), so they can't
 // collide with the app's own routes or shadow them.
@@ -762,7 +785,7 @@ export async function registerRoutes(
     try {
       const { handle, displayName, role, city, message } = req.body;
       const email = String(req.body.email || "").trim().toLowerCase();
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (!EMAIL_PATTERN.test(email)) {
         return res.status(400).json({ error: "A valid email is required" });
       }
 
@@ -940,20 +963,7 @@ export async function registerRoutes(
 
       // Email the invite link. The admin page still shows it to copy, in case
       // the email doesn't arrive.
-      const { queueEmail } = await import("./email/queue");
-      const { betaInviteTemplate } = await import("./email/templates");
-      const inviteEmail = betaInviteTemplate({
-        inviteUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/auth?invite=${token}`,
-        displayName: betaReq.displayName,
-        role: betaReq.role,
-      });
-      queueEmail({
-        to: betaReq.email,
-        subject: inviteEmail.subject,
-        html: inviteEmail.html,
-        text: inviteEmail.text,
-        metadata: { type: "beta_invite", betaRequestId: betaReq.id, inviteId: invite.id },
-      });
+      await emailInvite(invite, betaReq.email, { betaRequestId: betaReq.id });
 
       res.json({
         success: true,
@@ -999,6 +1009,32 @@ export async function registerRoutes(
   app.post("/api/admin/beta/invites/:id/revoke", requireAdmin, async (req: AuthedRequest, res: Response) => {
     storage.revokeInvite(parseInt(String(req.params.id)));
     res.json({ success: true });
+  });
+
+  // Re-send an unused invite by email, optionally correcting the address first
+  // (invites made before email worked were never sent, and some have a name
+  // typed where the email belongs).
+  app.post("/api/admin/beta/invites/:id/resend", requireAdmin, async (req: AuthedRequest, res: Response) => {
+    const id = parseInt(String(req.params.id));
+    const invite = storage.getInvites().find(i => i.id === id);
+    if (!invite) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+    if (invite.status !== "active" || invite.usedCount >= invite.maxUses) {
+      return res.status(400).json({ error: "Only active, unused invites can be resent" });
+    }
+    const email = String(req.body?.email ?? invite.email ?? "").trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(email)) {
+      return res.status(400).json({ error: "Enter a valid email address for this invite" });
+    }
+    if (email !== invite.email) {
+      // Keep the linked waitlist request in step, so signup still marks it activated.
+      const linked = storage.getBetaRequests().find(r => r.inviteId === invite.id);
+      if (linked) storage.updateBetaRequest(linked.id, { email });
+      storage.updateInvite(invite.id, { email });
+    }
+    await emailInvite(invite, email, { resend: true });
+    res.json({ success: true, email });
   });
 
   // Update user access (activate/revoke)

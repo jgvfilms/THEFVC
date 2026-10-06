@@ -713,6 +713,57 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // ===== ADMIN: resend an invite =====
+  describe("POST /api/admin/beta/invites/:id/resend", () => {
+    async function adminToken() {
+      const admin = storage.createUser({
+        handle: "resender",
+        email: "resender@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "resender@test.com", password: "admin123" }),
+      });
+      return { admin, token: (await res.json()).token as string };
+    }
+    const resend = (token: string, id: number, email?: string) =>
+      fetch(`${baseUrl}/api/admin/beta/invites/${id}/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(email === undefined ? {} : { email }),
+      });
+
+    it("corrects a name-in-the-email-field invite and emails it", async () => {
+      const { admin, token } = await adminToken();
+      const invite = storage.createInvite({ token: "old-tok", email: "Matthew Lorentz", displayName: "Matt", createdBy: admin.id });
+      const linked = storage.createBetaRequest({ email: "Matthew Lorentz" });
+      storage.updateBetaRequest(linked.id, { status: "invited", inviteId: invite.id });
+
+      expect((await resend(token, invite.id)).status).toBe(400);
+
+      const res = await resend(token, invite.id, " Matt@Example.com ");
+      expect(res.status).toBe(200);
+      expect(storage.getInvites().find((i) => i.id === invite.id)?.email).toBe("matt@example.com");
+      expect(storage.getBetaRequest(linked.id)?.email).toBe("matt@example.com");
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("matt@example.com");
+      expect(queued[0].html).toContain("/auth?invite=old-tok");
+    });
+
+    it("refuses revoked invites", async () => {
+      const { admin, token } = await adminToken();
+      const invite = storage.createInvite({ token: "gone-tok", email: "gone@test.com", createdBy: admin.id });
+      storage.revokeInvite(invite.id);
+      expect((await resend(token, invite.id)).status).toBe(400);
+      expect(db.all(sql`SELECT 1 FROM email_queue`)).toHaveLength(0);
+    });
+  });
+
   // ===== BETA: Invite Validation =====
   describe("GET /api/beta/invite/:token", () => {
     it("should return valid=false for non-existent token", async () => {
