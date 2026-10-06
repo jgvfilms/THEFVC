@@ -108,6 +108,8 @@ export async function registerRoutes(
   app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, identifier: "login", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/signup", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "signup", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
   app.use("/api/auth/password-reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "password-reset", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
+  // Each waitlist request sends two emails, so cap it like the auth endpoints.
+  app.use("/api/beta/request", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "beta-request", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
 
   // ===== Standalone pages: /rosarito (pitch) and /JGarrettVorreuter (portfolio) =====
   // Self-contained HTML documents, deliberately outside the SPA. They have to
@@ -758,18 +760,45 @@ export async function registerRoutes(
   // ----- BETA: Public request access -----
   app.post("/api/beta/request", async (req: AuthedRequest, res: Response) => {
     try {
-      const { email, handle, displayName, role, city, message } = req.body;
-      if (!email) {
-        return res.status(400).json({ error: "Email is required" });
+      const { handle, displayName, role, city, message } = req.body;
+      const email = String(req.body.email || "").trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "A valid email is required" });
       }
 
       // Check if already requested
-      const existing = storage.getBetaRequests().find(r => r.email === email);
+      const existing = storage.getBetaRequests().find(r => r.email.toLowerCase() === email);
       if (existing) {
         return res.status(409).json({ error: "You're already on the waitlist", status: existing.status });
       }
 
       const betaReq = storage.createBetaRequest({ email, handle, displayName, role, city, message });
+
+      const { queueEmail } = await import("./email/queue");
+      const { waitlistConfirmationTemplate, waitlistAdminNoticeTemplate } = await import("./email/templates");
+      const confirmation = waitlistConfirmationTemplate({ displayName });
+      queueEmail({
+        to: email,
+        subject: confirmation.subject,
+        html: confirmation.html,
+        text: confirmation.text,
+        metadata: { type: "waitlist_confirmation", betaRequestId: betaReq.id },
+      });
+      const adminInbox = process.env.WAITLIST_NOTIFY_EMAIL || process.env.INVOICE_REPLY_TO;
+      if (adminInbox) {
+        const notice = waitlistAdminNoticeTemplate({
+          email, displayName, role, city, message,
+          adminUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/app/admin`,
+        });
+        queueEmail({
+          to: adminInbox,
+          subject: notice.subject,
+          html: notice.html,
+          text: notice.text,
+          metadata: { type: "waitlist_admin_notice", betaRequestId: betaReq.id },
+        });
+      }
+
       res.status(201).json({ success: true, message: "Request received", id: betaReq.id });
     } catch (err) {
       res.status(500).json({ error: "Failed to submit request" });
@@ -900,10 +929,28 @@ export async function registerRoutes(
         approvedAt: new Date(),
       });
 
+      // Email the invite link. The admin page still shows it to copy, in case
+      // the email doesn't arrive.
+      const { queueEmail } = await import("./email/queue");
+      const { betaInviteTemplate } = await import("./email/templates");
+      const inviteEmail = betaInviteTemplate({
+        inviteUrl: `${process.env.FRONTEND_URL || "https://thefvc.is"}/auth?invite=${token}`,
+        displayName: betaReq.displayName,
+        role: betaReq.role,
+      });
+      queueEmail({
+        to: betaReq.email,
+        subject: inviteEmail.subject,
+        html: inviteEmail.html,
+        text: inviteEmail.text,
+        metadata: { type: "beta_invite", betaRequestId: betaReq.id, inviteId: invite.id },
+      });
+
       res.json({
         success: true,
         invite,
         inviteUrl: `/auth?invite=${token}`,
+        emailed: true,
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to approve request" });

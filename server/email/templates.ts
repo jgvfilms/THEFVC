@@ -7,6 +7,16 @@ export interface TemplateContext {
   [key: string]: any;
 }
 
+/** Escape text a visitor typed (names, messages) before it goes into email HTML. */
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Password reset email template.
  * Context: { resetUrl, userHandle, userEmail }
@@ -112,18 +122,74 @@ export function betaInviteTemplate(ctx: TemplateContext): { subject: string; htm
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 40px;">
   <div style="max-width: 600px; margin: 0 auto; background: #1a1a1a; border-radius: 12px; padding: 40px; border: 1px solid #333;">
     <h1 style="color: #d4af37; margin-top: 0;">You're Invited!</h1>
-    <p>Hello ${displayName || "there"},</p>
+    <p>Hello ${esc(displayName) || "there"},</p>
     <p>You've been invited to join THEFVC.IS, the Film Video Collective.</p>
-    ${role ? `<p>Your role: <strong>${role}</strong></p>` : ""}
+    ${role ? `<p>Your role: <strong>${esc(role)}</strong></p>` : ""}
     <p style="text-align: center; margin: 30px 0;">
-      <a href="${inviteUrl}" style="display: inline-block; background: #d4af37; color: #0a0a0a; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">Accept Invite</a>
+      <a href="${esc(inviteUrl)}" style="display: inline-block; background: #d4af37; color: #0a0a0a; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">Accept Invite</a>
     </p>
-    <p>This invite is valid for 7 days. If you don't accept, it will expire automatically.</p>
+    <p>This link is just for you and works once. Questions? Reply to this email.</p>
     <p style="margin-top: 40px; color: #888; font-size: 14px;">— The FVC Team</p>
   </div>
 </body>
 </html>`,
-    text: `You're Invited to THEFVC.IS!\n\nHello ${displayName || "there"},\n\nYou've been invited to join THEFVC.IS, the Film Video Collective.\n${role ? `Your role: ${role}\n` : ""}Click the link below to accept your invite:\n\n${inviteUrl}\n\nThis invite is valid for 7 days. If you don't accept, it will expire automatically.\n\n— The FVC Team`,
+    text: `You're Invited to THEFVC.IS!\n\nHello ${displayName || "there"},\n\nYou've been invited to join THEFVC.IS, the Film Video Collective.\n${role ? `Your role: ${role}\n` : ""}Click the link below to accept your invite:\n\n${inviteUrl}\n\nThis link is just for you and works once. Questions? Reply to this email.\n\n— The FVC Team`,
+  };
+}
+
+/**
+ * Sent to someone who just joined the beta waitlist.
+ * Context: { displayName }
+ */
+export function waitlistConfirmationTemplate(ctx: TemplateContext): { subject: string; html: string; text: string } {
+  const { displayName } = ctx;
+  return {
+    subject: "You're on the THEFVC.IS waitlist",
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Waitlist</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 40px;">
+  <div style="max-width: 600px; margin: 0 auto; background: #1a1a1a; border-radius: 12px; padding: 40px; border: 1px solid #333;">
+    <h1 style="color: #d4af37; margin-top: 0;">You're on the list</h1>
+    <p>Hello ${esc(displayName) || "there"},</p>
+    <p>Thanks for your interest in THEFVC.IS, the Film Video Collective. We're letting beta testers in a few at a time.</p>
+    <p>When your spot opens up, we'll email you a personal invite link to create your account.</p>
+    <p style="margin-top: 40px; color: #888; font-size: 14px;">— The FVC Team</p>
+  </div>
+</body>
+</html>`,
+    text: `You're on the list\n\nHello ${displayName || "there"},\n\nThanks for your interest in THEFVC.IS, the Film Video Collective. We're letting beta testers in a few at a time.\n\nWhen your spot opens up, we'll email you a personal invite link to create your account.\n\n— The FVC Team`,
+  };
+}
+
+/**
+ * Tells the FVC team someone joined the waitlist.
+ * Context: { email, displayName, role, city, message, adminUrl }
+ */
+export function waitlistAdminNoticeTemplate(ctx: TemplateContext): { subject: string; html: string; text: string } {
+  const { email, displayName, role, city, message, adminUrl } = ctx;
+  const rows: [string, unknown][] = [
+    ["Name", displayName], ["Email", email], ["Role", role], ["City", city], ["Message", message],
+  ];
+  const filled = rows.filter(([, v]) => v);
+  return {
+    subject: `New waitlist request: ${String(displayName || email).replace(/\s+/g, " ").slice(0, 80)}`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>New waitlist request</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 40px;">
+  <div style="max-width: 600px; margin: 0 auto; background: #1a1a1a; border-radius: 12px; padding: 40px; border: 1px solid #333;">
+    <h1 style="color: #d4af37; margin-top: 0;">New waitlist request</h1>
+    ${filled.map(([k, v]) => `<p><strong>${k}:</strong> ${esc(v)}</p>`).join("\n    ")}
+    <p style="text-align: center; margin: 30px 0;">
+      <a href="${esc(adminUrl)}" style="display: inline-block; background: #d4af37; color: #0a0a0a; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">Review in admin</a>
+    </p>
+  </div>
+</body>
+</html>`,
+    text: `New waitlist request\n\n${filled.map(([k, v]) => `${k}: ${v}`).join("\n")}\n\nReview it in admin: ${adminUrl}`,
   };
 }
 

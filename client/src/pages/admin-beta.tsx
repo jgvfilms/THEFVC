@@ -49,7 +49,10 @@ export function AdminBetaPage() {
   const approveMutation = useMutation({
     mutationFn: (id: number) => apiRequestJson("POST", `/api/admin/beta/requests/${id}/approve`),
     onSuccess: (data: any) => {
-      toast({ title: "Request approved", description: "Invite link generated" });
+      toast({
+        title: "Request approved",
+        description: data.emailed ? "Invite emailed. The link is below if you need to resend it." : "Invite link generated",
+      });
       if (data.inviteUrl) {
         setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }

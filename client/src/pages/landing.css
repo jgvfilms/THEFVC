@@ -44,12 +44,6 @@
   font: 600 .95rem/1 var(--f-body); text-decoration: none; border: 1.5px solid var(--ink); border-radius: 2px; transition: background .15s, color .15s; }
 .fvc-lp .btn-primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
 .fvc-lp .btn-primary:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-/* Disabled "Join THE FVC": both labels share one grid cell so the width never jumps. */
-.fvc-lp .btn-soon { display: inline-grid; place-items: center; cursor: default; user-select: none; }
-.fvc-lp .btn-soon > span { grid-area: 1 / 1; }
-.fvc-lp .btn-soon .soon-hover { visibility: hidden; }
-.fvc-lp .btn-soon:hover .soon-default, .fvc-lp .btn-soon:focus-visible .soon-default, .fvc-lp .btn-soon:active .soon-default { visibility: hidden; }
-.fvc-lp .btn-soon:hover .soon-hover, .fvc-lp .btn-soon:focus-visible .soon-hover, .fvc-lp .btn-soon:active .soon-hover { visibility: visible; }
 .fvc-lp .btn-ghost { background: transparent; color: var(--ink); }
 .fvc-lp .btn-ghost:hover { background: var(--ink); color: var(--paper); }
 .fvc-lp .textlink { font-weight: 600; text-decoration: none; border-bottom: 1.5px solid var(--signal); padding-bottom: 2px; align-self: flex-start; }

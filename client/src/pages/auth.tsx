@@ -55,9 +55,10 @@ function GoogleButton({ label, inviteToken }: { label: string; inviteToken: stri
   );
 }
 
-// Off until the signup flow is verified end to end. Flip to true to reopen
-// invite-based signup on /auth.
-const SIGNUP_ENABLED = false;
+// Signup is invite-only: people join the waitlist, an admin approves them at
+// /app/admin, and the emailed invite link opens the signup form. Set to false
+// to send invite links to plain login instead.
+const SIGNUP_ENABLED = true;
 
 export function AuthPage() {
   const { login, signup, adoptToken } = useAuth();
@@ -151,6 +152,8 @@ export function AuthPage() {
         })
         .finally(() => setInviteChecked(true));
     } else {
+      // Landing-page "Join" buttons link to /auth?join=1: open the waitlist form.
+      if (params.has("join")) setMode("request");
       setInviteChecked(true);
     }
   }, []);
@@ -399,10 +402,9 @@ export function AuthPage() {
             <>
               {reqSubmitted ? (
                 <div className="text-center" data-testid="request-success">
-                  <div className="mb-4 text-5xl">........</div>
                   <h1 className="font-display text-xl font-700">You're on the list</h1>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    We'll email you when your beta invite is ready. You'll get a unique link to create your account.
+                    Check your inbox for a confirmation. We'll email you a personal invite link when your spot opens up.
                   </p>
                   <Button onClick={() => { setReqSubmitted(false); setMode("login"); }} variant="outline" className="mt-6">
                     Back to login

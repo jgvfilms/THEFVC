@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createTestServer, getTestCredentials } from "../server";
 import { storage, db } from "../../server/storage";
 import { hashPassword } from "../../server/middleware/auth";
+import { sql } from "drizzle-orm";
 
 describe("API Integration Tests", () => {
   let server: Awaited<ReturnType<typeof createTestServer>>;
@@ -533,7 +534,37 @@ describe("API Integration Tests", () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.json()).resolves.toMatchObject({ error: "Email is required" });
+      await expect(res.json()).resolves.toMatchObject({ error: "A valid email is required" });
+    });
+
+    it("emails a confirmation to the requester and a notice to the team", async () => {
+      process.env.WAITLIST_NOTIFY_EMAIL = "team@test.com";
+      try {
+        const res = await fetch(`${baseUrl}/api/beta/request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "  New.Person@Test.com ", displayName: "<b>Pat</b>", role: "Editor" }),
+        });
+        expect(res.status).toBe(201);
+
+        const queued = db.all<{ to: string; subject: string; html: string }>(sql`SELECT "to", subject, html FROM email_queue ORDER BY id`);
+        expect(queued.map((e) => e.to)).toEqual(["new.person@test.com", "team@test.com"]);
+        expect(queued[0].subject).toContain("waitlist");
+        expect(queued[1].html).toContain("Pat");
+        expect(queued[1].html).not.toContain("<b>Pat</b>");
+      } finally {
+        delete process.env.WAITLIST_NOTIFY_EMAIL;
+      }
+    });
+
+    it("treats emails differing only in case as the same request", async () => {
+      storage.createBetaRequest({ email: "same@test.com" });
+      const res = await fetch(`${baseUrl}/api/beta/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "SAME@test.com" }),
+      });
+      expect(res.status).toBe(409);
     });
 
     it("should successfully submit beta request", async () => {
@@ -569,6 +600,39 @@ describe("API Integration Tests", () => {
       expect(res.status).toBe(409);
       const body = await res.json();
       expect(body.error).toContain("already on the waitlist");
+    });
+  });
+
+  // ===== BETA: Admin approval =====
+  describe("POST /api/admin/beta/requests/:id/approve", () => {
+    it("creates an invite and emails the link to the requester", async () => {
+      storage.createUser({
+        handle: "approver",
+        email: "approver@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "approver@test.com", password: "admin123" }),
+      });
+      const { token } = await loginRes.json();
+      const betaReq = storage.createBetaRequest({ email: "approved@test.com", displayName: "Approved Person" });
+
+      const res = await fetch(`${baseUrl}/api/admin/beta/requests/${betaReq.id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.emailed).toBe(true);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("approved@test.com");
+      expect(queued[0].html).toContain(body.inviteUrl);
+      expect(storage.getBetaRequest(betaReq.id)?.status).toBe("invited");
     });
   });
 
