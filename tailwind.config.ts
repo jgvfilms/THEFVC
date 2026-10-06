@@ -11,8 +11,9 @@ export default {
         sm: ".1875rem",
       },
       fontFamily: {
-        sans: ["Satoshi", "Inter", "sans-serif"],
-        display: ["Clash Display", "sans-serif"],
+        // Google Fonts only: the CSP allows fonts.googleapis.com, not Fontshare.
+        sans: ["Instrument Sans", "Helvetica Neue", "Arial", "sans-serif"],
+        display: ["Instrument Sans", "Helvetica Neue", "Arial", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
       colors: {
