@@ -1155,4 +1155,54 @@ describe("API Integration Tests", () => {
       expect(body.success).toBe(true);
     });
   });
+
+  // ===== PRODUCTIONS: status changes =====
+  describe("PATCH /api/productions/:id", () => {
+    async function login(handle: string) {
+      const user = storage.createUser({ handle, email: `${handle}@test.com`, passwordHash: hashPassword("pw123456") });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "pw123456" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    function patch(id: number, token: string, body: unknown) {
+      return fetch(`${baseUrl}/api/productions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("lets the owner move a production out of pre-production", async () => {
+      const { user, token } = await login("owner1");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      expect(prod.status).toBe("pre_production");
+
+      const res = await patch(prod.id, token, { status: "in_production" });
+      expect(res.status).toBe(200);
+      expect(storage.getProduction(prod.id)?.status).toBe("in_production");
+    });
+
+    it("rejects unknown statuses and fields outside the allowlist", async () => {
+      const { user, token } = await login("owner2");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await patch(prod.id, token, { status: "shipped" })).status).toBe(400);
+      expect((await patch(prod.id, token, { creatorId: 999 })).status).toBe(400);
+      expect(storage.getProduction(prod.id)?.creatorId).toBe(user.id);
+    });
+
+    it("refuses status changes from someone who doesn't own the production", async () => {
+      const { user } = await login("owner3");
+      const { token: otherToken } = await login("stranger");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await patch(prod.id, otherToken, { status: "wrapped" })).status).toBe(403);
+      expect(storage.getProduction(prod.id)?.status).toBe("pre_production");
+    });
+  });
 });
