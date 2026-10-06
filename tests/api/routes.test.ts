@@ -636,6 +636,53 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // ===== ADMIN: remove admin rights =====
+  describe("POST /api/admin/users/:id/remove-admin", () => {
+    async function loginAdmin(handle: string) {
+      const user = storage.createUser({
+        handle,
+        email: `${handle}@test.com`,
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "admin123" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    it("demotes another admin but keeps their account", async () => {
+      const { token } = await loginAdmin("staff");
+      const founder = storage.createUser({
+        handle: "founder",
+        email: "founder@test.com",
+        passwordHash: hashPassword("pw123456"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/admin/users/${founder.id}/remove-admin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const after = storage.getUser(founder.id);
+      expect(after?.isAdmin).toBe(false);
+      expect(after?.accessStatus).toBe(founder.accessStatus);
+    });
+
+    it("refuses to demote yourself", async () => {
+      const { user, token } = await loginAdmin("solo");
+      const res = await fetch(`${baseUrl}/api/admin/users/${user.id}/remove-admin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(400);
+      expect(storage.getUser(user.id)?.isAdmin).toBe(true);
+    });
+  });
+
   // ===== BETA: Invite Validation =====
   describe("GET /api/beta/invite/:token", () => {
     it("should return valid=false for non-existent token", async () => {

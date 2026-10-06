@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, apiRequestJson } from "@/lib/queryClient";
+import { apiRequest, apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,7 @@ interface BetaData {
 
 export function AdminBetaPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"overview" | "requests" | "invites" | "members" | "feedback">("overview");
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -93,6 +95,15 @@ export function AdminBetaPage() {
       toast({ title: "Invite revoked" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+  });
+
+  const removeAdminMutation = useMutation({
+    mutationFn: (id: number) => apiRequestJson("POST", `/api/admin/users/${id}/remove-admin`),
+    onSuccess: () => {
+      toast({ title: "Admin access removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to remove admin"), variant: "destructive" }),
   });
 
   const toggleAccessMutation = useMutation({
@@ -360,6 +371,18 @@ export function AdminBetaPage() {
                     {m.lastLoginAt && ` · Last seen ${new Date(m.lastLoginAt).toLocaleDateString()}`}
                   </p>
                 </div>
+                {m.isAdmin && m.id !== user?.id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (confirm(`Remove admin access from ${m.handle}? They keep their member account.`)) removeAdminMutation.mutate(m.id);
+                    }}
+                    data-testid={`button-remove-admin-${m.id}`}
+                  >
+                    Remove admin
+                  </Button>
+                )}
                 {!m.isAdmin && (
                   <Button
                     size="sm"

@@ -1005,6 +1005,25 @@ export async function registerRoutes(
     res.json({ success: true, user: { id: user.id, handle: user.handle, accessStatus: user.accessStatus } });
   });
 
+  // Take admin rights away from another account (e.g. the founder's personal
+  // login once the staff admin account exists). Granting is left to
+  // ADMIN_EMAIL, so a stolen admin session can't mint new admins.
+  app.post("/api/admin/users/:id/remove-admin", requireAdmin, async (req: AuthedRequest, res: Response) => {
+    const id = parseInt(String(req.params.id));
+    const target = storage.getUser(id);
+    if (!target) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    if (id === req.userId) {
+      return res.status(400).json({ error: "You can't remove your own admin access" });
+    }
+    if (process.env.ADMIN_EMAIL && target.email === process.env.ADMIN_EMAIL) {
+      return res.status(400).json({ error: "This is the ADMIN_EMAIL account; change ADMIN_EMAIL in Railway instead" });
+    }
+    storage.updateUser(id, { isAdmin: false });
+    res.json({ success: true });
+  });
+
   // Update feedback status
   app.patch("/api/admin/feedback/:id", requireAdmin, async (req: AuthedRequest, res: Response) => {
     const { status, adminNotes } = req.body;
