@@ -572,21 +572,20 @@ export async function registerRoutes(
   });
 
   // ----- PROFILE PHOTO UPLOADS -----
+  const IMAGE_EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
   const upload = multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => {
         if (!existsSync(PROFILE_UPLOADS_DIR)) mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
         cb(null, PROFILE_UPLOADS_DIR);
       },
-      filename: (_req, file, cb) => {
-        const ext = file.originalname.split(".").pop()?.toLowerCase() || "jpg";
-        cb(null, `${randomUUID()}.${ext}`);
-      },
+      // Extension from the checked mimetype, not the client's filename, so an
+      // upload can't land on disk as .html or .svg and be served as a page.
+      filename: (_req, file, cb) => cb(null, `${randomUUID()}.${IMAGE_EXTENSIONS[file.mimetype]}`),
     }),
     limits: { fileSize: 8 * 1024 * 1024 }, // 8MB max
     fileFilter: (_req, file, cb) => {
-      const allowed = ["image/jpeg", "image/png", "image/webp"];
-      if (allowed.includes(file.mimetype)) {
+      if (file.mimetype in IMAGE_EXTENSIONS) {
         cb(null, true);
       } else {
         cb(new Error("Only JPEG, PNG, and WebP images are allowed"));
@@ -613,19 +612,16 @@ export async function registerRoutes(
   });
 
   // ----- PRODUCTION COVER IMAGES -----
-  // The extension comes from the checked mimetype, never the client's filename,
-  // so an upload can't land on disk as .html or .svg and be served as a page.
-  const COVER_EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
   const productionCoverUpload = multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => {
         if (!existsSync(PRODUCTION_UPLOADS_DIR)) mkdirSync(PRODUCTION_UPLOADS_DIR, { recursive: true });
         cb(null, PRODUCTION_UPLOADS_DIR);
       },
-      filename: (_req, file, cb) => cb(null, `${randomUUID()}.${COVER_EXTENSIONS[file.mimetype]}`),
+      filename: (_req, file, cb) => cb(null, `${randomUUID()}.${IMAGE_EXTENSIONS[file.mimetype]}`),
     }),
     limits: { fileSize: 8 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => cb(null, file.mimetype in COVER_EXTENSIONS),
+    fileFilter: (_req, file, cb) => cb(null, file.mimetype in IMAGE_EXTENSIONS),
   }).single("cover");
 
   function removeProductionCoverFile(url: string | null) {

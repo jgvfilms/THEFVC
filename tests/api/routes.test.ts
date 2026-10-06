@@ -1272,6 +1272,19 @@ describe("API Integration Tests", () => {
       expect((await res.json()).coverUrl).toMatch(/\.png$/);
     });
 
+    it("names profile photos by their image type too", async () => {
+      const { token } = await login("avatarname");
+      const body = new FormData();
+      body.append("avatar", new Blob([PNG], { type: "image/png" }), "evil.html");
+      const res = await fetch(`${baseUrl}/api/profile/avatar`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()).url).toMatch(/^\/uploads\/profiles\/[0-9a-f-]+\.png$/);
+    });
+
     it("rejects files that aren't JPEG, PNG or WebP", async () => {
       const { user, token } = await login("covertype");
       const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
