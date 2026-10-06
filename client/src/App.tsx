@@ -23,7 +23,6 @@ import { W9FormPage } from "./pages/w9-form";
 import { ProductionsList } from "./pages/productions";
 import { ProductionDetail } from "./pages/production-detail";
 import { AdminBetaPage } from "./pages/admin-beta";
-import { AdminInvoicesPage } from "./pages/admin-invoices";
 import NotFound from "./pages/not-found";
 import { rememberReturnPath } from "./lib/return-path";
 
@@ -73,7 +72,6 @@ export function AppRouter() {
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
       <Route path="/app/productions/:id">{() => <DashboardPage><ProductionDetail /></DashboardPage>}</Route>
       <Route path="/app/productions">{() => <DashboardPage><ProductionsList /></DashboardPage>}</Route>
-      <Route path="/app/admin/invoices">{() => <DashboardPage><AdminInvoicesPage /></DashboardPage>}</Route>
       <Route path="/app/admin">{() => <DashboardPage><AdminBetaPage /></DashboardPage>}</Route>
       <Route path="/app/payments">{() => <DashboardPage><PaymentsPage /></DashboardPage>}</Route>
       <Route path="/app/w9">{() => <DashboardPage><W9FormPage /></DashboardPage>}</Route>
