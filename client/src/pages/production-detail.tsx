@@ -29,7 +29,7 @@ const STATUS_OPTIONS = [
   { value: "pre_production", label: "Pre-Production" },
   { value: "in_production", label: "In Production" },
   { value: "post", label: "Post-Production" },
-  { value: "wrapped", label: "Wrapped" },
+  { value: "wrapped", label: "Complete" },
 ];
 
 export function ProductionDetail() {
@@ -44,6 +44,19 @@ export function ProductionDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/productions", id],
     queryFn: () => apiRequestJson<ProductionDetailData>("GET", `/api/productions/${id}`),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (status: string) =>
+      apiRequestJson<Production>("PATCH", `/api/productions/${id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/productions", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/productions"] });
+      toast({ title: "Status updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
   });
 
   const addCrewMutation = useMutation({
@@ -146,9 +159,22 @@ export function ProductionDetail() {
                 {production.type.replace(/_/g, " ")}
               </p>
             </div>
-            <Badge variant={production.status === "in_production" ? "default" : "secondary"} data-testid="badge-prod-detail-status">
-              {STATUS_OPTIONS.find((s) => s.value === production.status)?.label || production.status}
-            </Badge>
+            <Select
+              value={production.status || "pre_production"}
+              onValueChange={(v) => updateStatusMutation.mutate(v)}
+              disabled={updateStatusMutation.isPending}
+            >
+              <SelectTrigger className="h-8 w-40 text-xs" data-testid="select-prod-detail-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value} data-testid={`option-prod-status-${s.value}`}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {production.description && (
