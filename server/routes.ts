@@ -82,9 +82,11 @@ async function emailInvite(
 const RESERVED_HANDLES = new Set([
   "auth", "app", "crew", "u", "api", "uploads", "admin",
   "reset-password", "verify-email", "w9", "payments",
-  // Standalone pages served at /rosarito and /JGarrettVorreuter — a member holding one
-  // of these handles would have a profile URL that silently resolves to the
-  // standalone page instead.
+  // Standalone pages served at /rosarito and /JGarrettVorreuter (which now
+  // redirects) — a member holding one of these handles would have a profile URL
+  // that silently resolves to the standalone page instead. /jgvfilms is the
+  // founder's own handle, deliberately given his portfolio; his member profile
+  // stays reachable at /u/jgvfilms.
   "rosarito", "jgarrettvorreuter",
   // Content pages moved off the homepage.
   "roadmap", "news",
@@ -146,7 +148,7 @@ export async function registerRoutes(
   // Each waitlist request sends two emails, so cap it like the auth endpoints.
   app.use("/api/beta/request", rateLimit({ windowMs: 15 * 60 * 1000, max: 5, identifier: "beta-request", scope: "auth", blockDurationMs: AUTH_BLOCK_DURATION_MS }));
 
-  // ===== Standalone pages: /rosarito (pitch) and /JGarrettVorreuter (portfolio) =====
+  // ===== Standalone pages: /rosarito (pitch) and /jgvfilms (portfolio) =====
   // Self-contained HTML documents, deliberately outside the SPA. They have to
   // be registered here so they win against the bare-handle route (/:handle)
   // and the SPA catch-all, both of which would otherwise swallow them.
@@ -176,10 +178,12 @@ export async function registerRoutes(
   };
   app.get("/rosarito", serveStandalone("rosarito.html"));
   // The portfolio embeds the member's reel, same players as profile pages.
-  app.get("/JGarrettVorreuter", serveStandalone(
-    "jgarrettvorreuter.html",
+  app.get("/jgvfilms", serveStandalone(
+    "jgvfilms.html",
     "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; ",
   ));
+  // The portfolio's first address; links to it are already out there.
+  app.get("/JGarrettVorreuter", (_req: Request, res: Response) => res.redirect(301, "/jgvfilms"));
 
   // PRD-023v2: Health check endpoint (public, no auth required)
   app.get("/api/health", async (_req, res) => {

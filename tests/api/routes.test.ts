@@ -480,6 +480,24 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // The founder's handle serves his standalone portfolio instead of the SPA
+  // profile; the profile itself stays at /u/jgvfilms.
+  describe("portfolio at /jgvfilms", () => {
+    it("serves the portfolio page with a CSP that allows the reel players", async () => {
+      const res = await fetch(`${baseUrl}/jgvfilms`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-security-policy")).toContain("frame-src https://www.youtube-nocookie.com");
+      const html = await res.text();
+      expect(html).toContain("<title>JGVFILMS");
+    });
+
+    it("redirects the portfolio's old address", async () => {
+      const res = await fetch(`${baseUrl}/JGarrettVorreuter`, { redirect: "manual" });
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("/jgvfilms");
+    });
+  });
+
   // These endpoints need no auth, so billing and tax state must never ride along.
   describe("public profile endpoints hide billing fields", () => {
     const PRIVATE = ["stripeCustomerId", "stripeConnectAccountId", "subscriptionTier", "subscriptionStatus", "w9Collected"];
