@@ -8,10 +8,12 @@
 import Stripe from "stripe";
 import { storage } from "../storage";
 import { encryptSensitive } from "./encryption";
+import { syncInvoiceFromStripe } from "./invoicing";
+import { stripe } from "./stripe-client";
+import { platformFeeCents, type FeePayer } from "./platform-fee";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "[REDACTED]", {
-  apiVersion: "2023-10-16",
-});
+// Re-exported so existing imports (`from "./lib/stripe"`) keep working.
+export { stripe, isStripeConfigured, STRIPE_API_VERSION } from "./stripe-client";
 
 /**
  * Create a Stripe Connect Express account for a user.
@@ -62,6 +64,7 @@ export async function createPaymentIntent(
   amount: number,
   currency: string,
   connectedAccountId: string,
+  payer: FeePayer,
   description?: string
 ): Promise<string> {
   const paymentIntent = await stripe.paymentIntents.create(
@@ -69,7 +72,7 @@ export async function createPaymentIntent(
       amount,
       currency,
       description,
-      application_fee_amount: Math.round(amount * 0.05), // 5% platform fee
+      application_fee_amount: platformFeeCents(amount, payer),
     },
     {
       stripeAccount: connectedAccountId,
@@ -93,6 +96,78 @@ export async function getPayout(payoutId: string, connectedAccountId: string) {
  * Call this from the webhook endpoint to update payment statuses.
  */
 export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
+  // Stripe retries failed deliveries for up to 3 days with exponential backoff
+  // and can deliver the same event more than once. Claim it first so a
+  // redelivered invoice.paid doesn't re-run side effects.
+  if (!storage.claimWebhookEvent(event.id, event.type)) {
+    return;
+  }
+
+  try {
+    await routeStripeEvent(event);
+    storage.markWebhookEventProcessed(event.id);
+  } catch (err: any) {
+    storage.markWebhookEventProcessed(event.id, String(err?.message || err));
+    throw err;
+  }
+}
+
+async function routeStripeEvent(event: Stripe.Event): Promise<void> {
+  // ── Invoicing events ──────────────────────────────────────
+  // Handled before the switch below because they share one shape.
+  if (event.type.startsWith("invoice.")) {
+    const stripeInvoice = event.data.object as Stripe.Invoice;
+    const local = stripeInvoice.id ? storage.getInvoiceByStripeId(stripeInvoice.id) : undefined;
+
+    // Not one of ours (e.g. a subscription invoice) — ignore quietly.
+    if (!local) return;
+
+    switch (event.type) {
+      case "invoice.finalized":
+      case "invoice.sent":
+      case "invoice.paid":
+      case "invoice.voided":
+      case "invoice.marked_uncollectible": {
+        // syncInvoiceFromStripe cancels pending reminders on any terminal status.
+        syncInvoiceFromStripe(stripeInvoice);
+        storage.logInvoiceEvent({
+          invoiceId: local.id,
+          eventType:
+            event.type === "invoice.paid"
+              ? "paid"
+              : event.type === "invoice.voided"
+                ? "voided"
+                : event.type.replace("invoice.", ""),
+          source: "stripe_webhook",
+          actorId: null,
+          payload: JSON.stringify({
+            stripeEventId: event.id,
+            status: stripeInvoice.status,
+            amountPaid: stripeInvoice.amount_paid,
+          }),
+        });
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        // Deliberately does NOT stop reminders. A failed card attempt means
+        // the balance is still owed, so the follow-up ladder should continue.
+        storage.logInvoiceEvent({
+          invoiceId: local.id,
+          eventType: "payment_failed",
+          source: "stripe_webhook",
+          actorId: null,
+          payload: JSON.stringify({ stripeEventId: event.id }),
+        });
+        break;
+      }
+
+      default:
+        break;
+    }
+    return;
+  }
+
   switch (event.type) {
     case "payment_intent.succeeded": {
       const intent = event.data.object as Stripe.PaymentIntent;

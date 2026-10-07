@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Save, Camera, Image, Youtube, Link as LinkIcon, Trash2, Palette, AlertCircle, CheckCircle2 } from "lucide-react";
 import type { Profile } from "@shared/schema";
+import { PROFILE_THEMES, normalizeProfileTheme } from "@/lib/profile-themes";
 
 const ROLES = [
   "Director", "Producer", "Director of Photography", "Camera Operator", "1st AC", "2nd AC",
@@ -27,14 +28,6 @@ const AVAILABILITY = [
   { value: "unavailable", label: "Unavailable" },
 ];
 
-const THEME_PRESETS = [
-  { value: "cinema_gold", label: "Cinema Gold", color: "#e8b339", bg: "from-amber-950/40 to-stone-950" },
-  { value: "warm_sepia", label: "Warm Sepia", color: "#c87f3e", bg: "from-orange-950/40 to-stone-950" },
-  { value: "noir_blue", label: "Noir Blue", color: "#5b8def", bg: "from-blue-950/40 to-slate-950" },
-  { value: "forest_green", label: "Forest Green", color: "#4ade80", bg: "from-green-950/40 to-stone-950" },
-  { value: "festival_red", label: "Festival Red", color: "#ef4444", bg: "from-red-950/40 to-stone-950" },
-  { value: "mono_white", label: "Mono White", color: "#e4e4e7", bg: "from-zinc-800/40 to-zinc-950" },
-];
 
 const SOCIAL_PLATFORMS = [
   { key: "instagram", label: "Instagram", placeholder: "https://instagram.com/yourname" },
@@ -483,27 +476,31 @@ export function ProfileEdit() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Choose a color theme for your public profile page.
+            Choose the look of your public profile page.
           </p>
-          <div className="grid grid-cols-3 gap-2">
-            {THEME_PRESETS.map((preset) => (
-              <button
-                key={preset.value}
-                onClick={() => set("themePreset", preset.value)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-colors ${
-                  (current.themePreset || "cinema_gold") === preset.value
-                    ? "border-primary"
-                    : "border-border hover:border-muted-foreground/40"
-                }`}
-                data-testid={`theme-${preset.value}`}
-              >
-                <div
-                  className="w-8 h-8 rounded-full"
-                  style={{ backgroundColor: preset.color }}
-                />
-                <span className="text-xs">{preset.label}</span>
-              </button>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {PROFILE_THEMES.map((theme) => {
+              const selected = normalizeProfileTheme(current.themePreset) === theme.id;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => set("themePreset", theme.id)}
+                  aria-pressed={selected}
+                  className={`flex flex-col gap-2 p-2 rounded-lg border-2 text-left transition-colors ${
+                    selected ? "border-primary" : "border-border hover:border-muted-foreground/40"
+                  }`}
+                  data-testid={`theme-${theme.id}`}
+                >
+                  {/* A tiny proof of the page: paper, headline ink, accent rule. */}
+                  <div className="h-14 w-full rounded-sm p-2 flex flex-col justify-between" style={{ backgroundColor: theme.paper }}>
+                    <div className="h-2 w-3/4" style={{ backgroundColor: theme.ink }} />
+                    <div className="h-1.5 w-1/3" style={{ backgroundColor: theme.signal }} />
+                  </div>
+                  <span className="text-xs">{theme.label}</span>
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

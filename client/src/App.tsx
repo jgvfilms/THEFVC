@@ -9,7 +9,10 @@ import { ThemeProvider } from "./lib/theme";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { NotificationsProvider } from "@/components/notifications-bell";
 import { Landing } from "./pages/landing";
+import { RoadmapPage } from "./pages/roadmap";
+import { NewsPage } from "./pages/news";
 import { AuthPage } from "./pages/auth";
+import { ResetPasswordPage } from "./pages/reset-password";
 import { DashboardLayout } from "./pages/layout";
 import { DashboardHome } from "./pages/dashboard-home";
 import { ProfileEdit } from "./pages/profile-edit";
@@ -21,13 +24,15 @@ import { ProductionsList } from "./pages/productions";
 import { ProductionDetail } from "./pages/production-detail";
 import { AdminBetaPage } from "./pages/admin-beta";
 import NotFound from "./pages/not-found";
+import { rememberReturnPath } from "./lib/return-path";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   useEffect(() => {
     if (!user && !loading) {
+      rememberReturnPath(location);
       navigate("/auth");
     }
   }, [user, loading]);
@@ -53,13 +58,16 @@ function DashboardPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AppRouter() {
+export function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/u/:handle" component={PublicProfile} />
       <Route path="/crew" component={CrewFinder} />
+      <Route path="/roadmap" component={RoadmapPage} />
+      <Route path="/news" component={NewsPage} />
       <Route path="/app">{() => <DashboardPage><DashboardHome /></DashboardPage>}</Route>
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
       <Route path="/app/productions/:id">{() => <DashboardPage><ProductionDetail /></DashboardPage>}</Route>

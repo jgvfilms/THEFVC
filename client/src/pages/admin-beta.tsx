@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, apiRequestJson } from "@/lib/queryClient";
+import { apiRequest, apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Check, X, Copy, Ban, MessageSquare, Users, Ticket, Star } from "lucide-react";
+import { Check, X, Copy, Ban, Mail, MessageSquare, Users, Ticket, Star, RotateCcw } from "lucide-react";
 
 interface BetaData {
   seats: { used: number; limit: number; remaining: number };
@@ -32,6 +33,7 @@ interface BetaData {
 
 export function AdminBetaPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"overview" | "requests" | "invites" | "members" | "feedback">("overview");
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -49,13 +51,20 @@ export function AdminBetaPage() {
   const approveMutation = useMutation({
     mutationFn: (id: number) => apiRequestJson("POST", `/api/admin/beta/requests/${id}/approve`),
     onSuccess: (data: any) => {
-      toast({ title: "Request approved", description: "Invite link generated" });
+      toast({
+        title: "Request approved",
+        description: data.emailed ? "Invite emailed. The link is below if you need to resend it." : "Invite link generated",
+      });
       if (data.inviteUrl) {
         setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
-    onError: () => toast({ title: "Failed to approve", variant: "destructive" }),
+    onError: (err: unknown) => {
+      // e.g. "Request is not pending" after a double click: the first click worked.
+      toast({ title: parseApiErrorMessage(err, "Failed to approve"), variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
   });
 
   const rejectMutation = useMutation({
@@ -64,6 +73,7 @@ export function AdminBetaPage() {
       toast({ title: "Request rejected" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to reject"), variant: "destructive" }),
   });
 
   const createInviteMutation = useMutation({
@@ -74,7 +84,10 @@ export function AdminBetaPage() {
       notes: inviteNotes || undefined,
     }),
     onSuccess: (data: any) => {
-      toast({ title: "Invite created", description: "Copy the link to share" });
+      toast({
+        title: "Invite created",
+        description: data.emailed ? `Emailed to ${data.invite.email}. The link is below too.` : "No email given: copy the link to share",
+      });
       if (data.inviteUrl) {
         setLastInviteUrl(`${window.location.origin}${data.inviteUrl}`);
       }
@@ -82,6 +95,7 @@ export function AdminBetaPage() {
       setShowInviteForm(false);
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to create invite"), variant: "destructive" }),
   });
 
   const revokeInviteMutation = useMutation({
@@ -90,6 +104,51 @@ export function AdminBetaPage() {
       toast({ title: "Invite revoked" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
     },
+  });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: ({ id, email }: { id: number; email: string }) =>
+      apiRequestJson<{ email: string }>("POST", `/api/admin/beta/invites/${id}/resend`, { email }),
+    onSuccess: (data) => {
+      toast({ title: "Invite sent", description: `Emailed to ${data.email}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to resend invite"), variant: "destructive" }),
+  });
+
+  // Asks for the address with the current one filled in, so a name typed into
+  // the email field (old manual invites) can be corrected before sending.
+  const resendInvite = (inv: { id: number; email: string | null; displayName: string | null }) => {
+    const looksLikeEmail = !!inv.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inv.email);
+    const who = inv.displayName ? ` for ${inv.displayName}` : "";
+    const email = window.prompt(`Send this invite${who} to:`, looksLikeEmail ? inv.email! : "");
+    if (email && email.trim()) resendInviteMutation.mutate({ id: inv.id, email: email.trim() });
+  };
+
+  const reinviteMutation = useMutation({
+    mutationFn: ({ id, email }: { id: number; email: string }) =>
+      apiRequestJson<{ email: string }>("POST", `/api/admin/beta/invites/${id}/reinvite`, { email }),
+    onSuccess: (data) => {
+      toast({ title: "New invite sent", description: `Emailed a fresh link to ${data.email}. The old link stays revoked.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to re-invite"), variant: "destructive" }),
+  });
+
+  const reinvite = (inv: { id: number; email: string | null; displayName: string | null }) => {
+    const looksLikeEmail = !!inv.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inv.email);
+    const who = inv.displayName ? ` for ${inv.displayName}` : "";
+    const email = window.prompt(`Email a new invite link${who} to:`, looksLikeEmail ? inv.email! : "");
+    if (email && email.trim()) reinviteMutation.mutate({ id: inv.id, email: email.trim() });
+  };
+
+  const removeAdminMutation = useMutation({
+    mutationFn: (id: number) => apiRequestJson("POST", `/api/admin/users/${id}/remove-admin`),
+    onSuccess: () => {
+      toast({ title: "Admin access removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/beta"] });
+    },
+    onError: (err: unknown) => toast({ title: parseApiErrorMessage(err, "Failed to remove admin"), variant: "destructive" }),
   });
 
   const toggleAccessMutation = useMutation({
@@ -247,10 +306,10 @@ export function AdminBetaPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => approveMutation.mutate(req.id)} data-testid={`button-approve-${req.id}`}>
+                    <Button size="sm" disabled={approveMutation.isPending || rejectMutation.isPending} onClick={() => approveMutation.mutate(req.id)} data-testid={`button-approve-${req.id}`}>
                       <Check className="h-4 w-4 mr-1" /> Approve
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => rejectMutation.mutate(req.id)} data-testid={`button-reject-${req.id}`}>
+                    <Button size="sm" variant="outline" disabled={approveMutation.isPending || rejectMutation.isPending} onClick={() => rejectMutation.mutate(req.id)} data-testid={`button-reject-${req.id}`}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
@@ -275,8 +334,8 @@ export function AdminBetaPage() {
             <div className="rounded-lg border border-border bg-card p-4 space-y-3" data-testid="invite-form">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="invEmail">Email (optional)</Label>
-                  <Input id="invEmail" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="filmmaker@email.com" />
+                  <Label htmlFor="invEmail">Email (we email the invite; blank = link only)</Label>
+                  <Input id="invEmail" type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="filmmaker@email.com" />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="invName">Name (optional)</Label>
@@ -292,7 +351,7 @@ export function AdminBetaPage() {
                 </div>
               </div>
               <Button onClick={() => createInviteMutation.mutate()} disabled={createInviteMutation.isPending} data-testid="button-create-invite">
-                {createInviteMutation.isPending ? "Creating..." : "Generate Invite Link"}
+                {createInviteMutation.isPending ? "Creating..." : inviteEmail.trim() ? "Create & Email Invite" : "Generate Invite Link"}
               </Button>
             </div>
           )}
@@ -321,6 +380,28 @@ export function AdminBetaPage() {
                       <Button size="sm" variant="ghost" onClick={() => copyToClipboard(url)} data-testid={`button-copy-${inv.id}`}>
                         <Copy className="h-4 w-4" />
                       </Button>
+                      {inv.status === "active" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resendInviteMutation.isPending}
+                          onClick={() => resendInvite(inv)}
+                          data-testid={`button-resend-${inv.id}`}
+                        >
+                          <Mail className="h-4 w-4 mr-1" /> Resend
+                        </Button>
+                      )}
+                      {inv.status === "revoked" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={reinviteMutation.isPending}
+                          onClick={() => reinvite(inv)}
+                          data-testid={`button-reinvite-${inv.id}`}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1" /> Re-invite
+                        </Button>
+                      )}
                       {inv.status === "active" && (
                         <Button size="sm" variant="ghost" onClick={() => revokeInviteMutation.mutate(inv.id)} data-testid={`button-revoke-${inv.id}`}>
                           <Ban className="h-4 w-4 text-destructive" />
@@ -357,6 +438,18 @@ export function AdminBetaPage() {
                     {m.lastLoginAt && ` · Last seen ${new Date(m.lastLoginAt).toLocaleDateString()}`}
                   </p>
                 </div>
+                {m.isAdmin && m.id !== user?.id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (confirm(`Remove admin access from ${m.handle}? They keep their member account.`)) removeAdminMutation.mutate(m.id);
+                    }}
+                    data-testid={`button-remove-admin-${m.id}`}
+                  >
+                    Remove admin
+                  </Button>
+                )}
                 {!m.isAdmin && (
                   <Button
                     size="sm"

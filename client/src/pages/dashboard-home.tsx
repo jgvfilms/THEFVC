@@ -12,6 +12,7 @@ import { ActivityFeed, FeedComposer } from "@/components/activity-feed";
 import { IndustryNews } from "@/components/industry-news";
 import { Newspaper } from "lucide-react";
 import type { Profile, Production } from "@shared/schema";
+import { ProductionThumb } from "@/components/production-thumb";
 
 export function DashboardHome() {
   const { user } = useAuth();
@@ -179,9 +180,7 @@ export function DashboardHome() {
                 <Card className="hover:border-primary/40 transition-colors cursor-pointer">
                   <CardContent className="py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                        <Clapperboard className="h-5 w-5 text-primary" />
-                      </div>
+                      <ProductionThumb coverUrl={prod.coverUrl} />
                       <div>
                         <p className="font-medium" data-testid={`text-production-title-${prod.id}`}>
                           {prod.title}

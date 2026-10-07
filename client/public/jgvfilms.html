@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JGVFILMS — J. Garrett Vorreuter</title>
+<meta name="description" content="J. Garrett Vorreuter — director, cinematographer, producer and writer. Ten years of run-and-gun filmmaking, from Paris to the Mojave.">
+<meta property="og:title" content="JGVFILMS — J. Garrett Vorreuter">
+<meta property="og:description" content="Director, cinematographer, producer and writer. Ten years of run and gun.">
+<meta property="og:type" content="profile">
+<meta property="og:url" content="https://www.thefvc.is/jgvfilms">
+<meta property="og:image" content="https://www.thefvc.is/portfolio/jgvfilms/img/open-1.jpg">
+<meta name="theme-color" content="#0b0a09">
+<link rel="preload" as="image" href="/portfolio/jgvfilms/img/open-1.jpg" fetchpriority="high">
+<script>try { if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion"); } catch (e) {}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Bodoni+Moda:opsz,wght@6..96,900&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* JGVFILMS portfolio, served at thefvc.is/jgvfilms. The member profile lives on at /u/jgvfilms.
+   Layout: one long reel. Each world is a pinned 100svh stage whose animation is
+   scrubbed to scroll position, so scrolling up plays it backwards exactly.
+   A fixed HUD (timecode + world counter + scrubber) treats the scroll as a playhead.
+   Single deliberate dark look; pale worlds (Paris, Air) set their own ground. */
+:root {
+  --ink: #0b0a09;
+  --bone: #ece5d6;
+  --dim: #8f8778;
+  --signal: #f06a2c;
+  --paris-ground: #e6ecef;
+  --paris-ink: #18212b;
+  --air-ground: #dde5ea;
+  --air-ink: #1b2730;
+  --neon-a: #ff3fb4;
+  --neon-b: #35e0ff;
+  --noir: #0a0a0c;
+  --blood: #a33422;
+
+  --f-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --f-body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --f-noir: "Bodoni Moda", Didot, "Times New Roman", serif;
+  --gutter: clamp(16px, 4vw, 48px);
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { background: var(--ink); color: var(--bone); }
+body { margin: 0; font: 400 1rem/1.55 var(--f-body); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+h1, h2, h3, p { margin: 0; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+img { display: block; max-width: 100%; }
+
+.mono { font: 500 .7rem/1.4 var(--f-mono); letter-spacing: .12em; text-transform: uppercase; }
+.display { font-family: var(--f-display); font-weight: 900; text-transform: uppercase; line-height: .86; letter-spacing: -.005em; text-wrap: balance; }
+.serif { font-family: var(--f-serif); font-style: italic; font-weight: 400; }
+
+/* ── HUD ── */
+.hud { position: fixed; left: 0; right: 0; z-index: 50; pointer-events: none; color: #fff; mix-blend-mode: difference;
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-inline: var(--gutter); }
+.hud.top { top: 0; padding-top: calc(env(safe-area-inset-top, 0px) + 14px); }
+.hud.bottom { bottom: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); flex-direction: column; align-items: stretch; gap: 8px; }
+.hud .mark { font: 900 1.2rem/1 var(--f-display); letter-spacing: .02em; }
+.hud .tc { font-variant-numeric: tabular-nums; }
+.hud .rec { display: inline-flex; align-items: center; gap: .45rem; }
+.hud .rec i { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: blink 1.2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.scrub { position: relative; height: 2px; background: rgba(255,255,255,.25); }
+.scrub b { position: absolute; inset: 0 auto 0 0; width: 0; background: #fff; }
+.scrub i { position: absolute; top: -3px; width: 1px; height: 8px; background: rgba(255,255,255,.6); }
+.hud-row { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.hud .motion-name { opacity: .7; }
+html:not(.motion) .hud.bottom { display: none; }
+
+/* ── Worlds: static layout first (complete without script or with reduced motion) ── */
+.world { position: relative; padding-block: clamp(72px, 10vw, 140px); padding-inline: var(--gutter); }
+.world-head { display: grid; gap: .6rem; max-width: 62ch; margin-bottom: 1.6rem; }
+.frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; }
+.frames img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.credit { color: var(--dim); }
+
+/* Opening */
+#w-open { background: var(--ink); }
+#w-open .stage { position: relative; display: grid; gap: 1.4rem; }
+#w-open .aperture { position: relative; aspect-ratio: 4 / 3; max-width: 560px; overflow: hidden; background: #000; }
+#w-open .aperture img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#w-open .aperture img:not(.ap-1) { opacity: 0; }
+/* The dusk shot plays as grainy black-and-white stock */
+#w-open .ap-2 { filter: grayscale(1) contrast(1.18) brightness(.96); }
+#w-open .grain { position: absolute; inset: -50%; opacity: 0; pointer-events: none; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23g)'/%3E%3C/svg%3E");
+  animation: grain-jitter .5s steps(5) infinite; }
+@keyframes grain-jitter { 0% { transform: translate(0, 0); } 20% { transform: translate(-4%, 3%); } 40% { transform: translate(3%, -4%); } 60% { transform: translate(-2%, -2%); } 80% { transform: translate(4%, 2%); } 100% { transform: translate(0, 0); } }
+#w-open .name { font-size: clamp(3.4rem, 15vw, 13rem); }
+#w-open .kicker { color: var(--dim); }
+#w-open .line { font-size: clamp(1.4rem, 3.4vw, 2.6rem); max-width: 22ch; }
+#w-open .reticle, #w-open .cue { display: none; }
+
+/* Reel */
+#w-reel { background: #050505; }
+#w-reel .player { position: relative; aspect-ratio: 16 / 9; width: min(100%, 1180px); margin-inline: auto; background: #000; box-shadow: 0 0 0 1px rgba(236,229,214,.14); }
+#w-reel .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+#w-reel .player .fallback { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 1rem; }
+#w-reel .world-head { margin-inline: auto; width: min(100%, 1180px); max-width: none; }
+
+/* Street */
+#w-street { background: #12100e; }
+#w-street .table { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 16px; }
+.print { background: #f4efe4; padding: 8px 8px 26px; box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+.print img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; }
+
+/* Paris */
+#w-paris { background: var(--paris-ground); color: var(--paris-ink); }
+#w-paris .credit { color: #5a6673; }
+.strip-wrap { overflow-x: auto; margin-inline: calc(var(--gutter) * -1); padding-inline: var(--gutter); }
+.strip { display: flex; gap: 0; width: max-content; background: #121212; padding: 22px 10px;
+  background-image: radial-gradient(circle, var(--paris-ground) 3px, transparent 3.5px), radial-gradient(circle, var(--paris-ground) 3px, transparent 3.5px);
+  background-size: 22px 22px, 22px 22px; background-position: 0 -0px, 0 calc(100% + 0px); background-repeat: repeat-x; }
+.strip figure { margin: 0 6px; }
+.strip img { height: clamp(180px, 46svh, 520px); width: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+.strip figcaption { font: 500 .62rem/1 var(--f-mono); color: #d8cfb8; letter-spacing: .1em; margin-top: 6px; }
+
+/* Desert */
+#w-desert { background: #1a140e; }
+#w-desert .clock { font: 500 clamp(.8rem, 1.6vw, 1rem)/1 var(--f-mono); letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+#w-desert .title { font-size: clamp(3.6rem, 13vw, 11rem); color: #f3e2c4; white-space: nowrap; }
+#w-desert .dusk, #w-desert .night { display: none; }
+
+/* Neon */
+#w-neon { background: #07060a; }
+#w-neon .title { font-family: var(--f-display); font-weight: 900; text-transform: uppercase; font-size: clamp(3.4rem, 12vw, 10rem); line-height: .85;
+  color: #fff; text-shadow: 0 0 6px var(--neon-a), 0 0 22px var(--neon-a), 0 0 48px var(--neon-a); }
+#w-neon .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+#w-neon .cell { overflow: hidden; background: #000; }
+#w-neon .cell img { width: 100%; height: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+#w-neon .cell:nth-child(odd) { box-shadow: 0 0 0 1px var(--neon-a), 0 0 24px -6px var(--neon-a); }
+#w-neon .cell:nth-child(even) { box-shadow: 0 0 0 1px var(--neon-b), 0 0 24px -6px var(--neon-b); }
+@media (max-width: 640px) { #w-neon .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Air */
+#w-air { background: var(--air-ground); color: var(--air-ink); overflow: hidden; }
+#w-air .credit { color: #5b6a74; }
+#w-air .title { font-size: clamp(4rem, 15vw, 13rem); line-height: .9; }
+#w-air .sky { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; margin-top: 1.4rem; }
+#w-air .float img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+
+/* Faces */
+#w-faces { background: #150f1a; }
+#w-faces .layers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; margin-top: 1.4rem; }
+#w-faces .layers img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+#w-faces .layers .soft { display: none; }
+#w-faces .focus { display: none; }
+
+/* ROSARITO */
+#w-rosarito { background: var(--noir); color: #ede6da; overflow: hidden; }
+#w-rosarito .t { font: 900 clamp(3rem, 12vw, 9.5rem)/.9 var(--f-noir); letter-spacing: .12em; white-space: nowrap; }
+#w-rosarito .photo { max-width: 560px; aspect-ratio: 4 / 3; object-fit: cover; filter: grayscale(1) contrast(1.1); }
+#w-rosarito .log { font-size: clamp(1.1rem, 2vw, 1.45rem); max-width: 34ch; line-height: 1.4; }
+#w-rosarito .glow { display: none; }
+.btn { display: inline-flex; align-items: center; gap: .5rem; min-height: 46px; padding: .75rem 1.2rem; text-decoration: none; font-weight: 600;
+  border: 1.5px solid currentColor; border-radius: 2px; pointer-events: auto; }
+.btn:hover { background: var(--bone); color: var(--ink); }
+.btn-signal { background: var(--signal); border-color: var(--signal); color: #140d08; }
+.btn-blood { background: var(--blood); border-color: var(--blood); color: #ede6da; }
+
+/* Close */
+#w-close { background: var(--ink); }
+#w-close .aperture { max-width: 560px; aspect-ratio: 4 / 3; overflow: hidden; }
+#w-close .aperture img { width: 100%; height: 100%; object-fit: cover; }
+#w-close .end h2 { font-size: clamp(3rem, 10vw, 8rem); margin-block: 1rem 1.4rem; }
+.links { display: flex; flex-wrap: wrap; gap: .6rem; }
+.draft-note { margin-top: 2.4rem; color: var(--dim); max-width: 60ch; font-size: .92rem; }
+
+/* ── Motion mode: pinned full-screen stages ── */
+html.motion .world { padding: 0; }
+html.motion .stage { position: relative; height: 100vh; height: 100lvh; overflow: hidden; }
+
+html.motion #w-open .stage { display: block; }
+html.motion #w-open .aperture { position: absolute; inset: 0; max-width: none; aspect-ratio: auto; clip-path: circle(16% at 50% 50%); }
+html.motion #w-open .aperture::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, rgba(0,0,0,.7)); }
+html.motion #w-open .name { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; color: #fff; mix-blend-mode: difference; padding-inline: var(--gutter); }
+html.motion #w-open .name span { display: block; }
+html.motion #w-open .kicker { position: absolute; left: 0; right: 0; bottom: 18%; text-align: center; padding-inline: var(--gutter); }
+html.motion #w-open .line { position: absolute; left: var(--gutter); bottom: 14%; opacity: 0; color: #fff; }
+html.motion #w-open .reticle { display: block; position: absolute; left: 50%; top: 50%; width: 34svmin; height: 34svmin; transform: translate(-50%, -50%); pointer-events: none; }
+#w-open .reticle::before, #w-open .reticle::after { content: ""; position: absolute; background: rgba(236,229,214,.5); }
+#w-open .reticle::before { left: -30%; right: -30%; top: 50%; height: 1px; }
+#w-open .reticle::after { top: -30%; bottom: -30%; left: 50%; width: 1px; }
+html.motion #w-open .cue { display: block; position: absolute; left: 0; right: 0; bottom: 9%; text-align: center; color: var(--dim); }
+
+html.motion #w-reel { padding-block: clamp(80px, 14svh, 160px); padding-inline: var(--gutter); }
+html.motion #w-street .stage-head, html.motion #w-paris .stage-head, html.motion #w-neon .stage-head { position: absolute; z-index: 3; left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 64px); max-width: min(520px, 80vw); }
+html.motion #w-street .table { display: block; position: absolute; inset: 0; }
+html.motion #w-street .print { position: absolute; left: 50%; top: 56%; width: clamp(150px, 30vw, 400px); }
+html.motion #w-street .stage-head { z-index: 0; }
+
+html.motion #w-paris .stage { display: flex; flex-direction: column; justify-content: center; }
+html.motion #w-paris .strip-wrap { overflow: visible; margin: 0; padding: 0; }
+html.motion #w-paris .strip { margin-top: 12svh; }
+
+html.motion #w-desert .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; aspect-ratio: auto; }
+html.motion #w-desert .frames { display: block; position: absolute; inset: 0; }
+html.motion #w-desert .frames::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,14,8,.5), transparent 26%, transparent 60%, rgba(20,14,8,.6)); }
+html.motion #w-desert .dusk, html.motion #w-desert .night { display: block; position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+#w-desert .dusk { background: linear-gradient(180deg, rgba(120,60,110,.0), rgba(214,110,60,.55)); mix-blend-mode: soft-light; }
+#w-desert .night { background: linear-gradient(180deg, rgba(10,16,40,.75), rgba(10,14,30,.35)); }
+html.motion #w-desert .hud-in { position: absolute; left: var(--gutter); right: var(--gutter); bottom: 12%; z-index: 3; display: grid; gap: .8rem; }
+html.motion #w-desert .world-head { position: absolute; z-index: 3; left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 64px); }
+
+html.motion #w-neon .stage { display: flex; align-items: center; padding-inline: var(--gutter); }
+html.motion #w-neon .grid { width: 100%; height: 70svh; grid-auto-rows: 1fr; margin-top: 10svh; }
+html.motion #w-neon .cell img { aspect-ratio: auto; }
+html.motion #w-neon .title { position: absolute; z-index: 4; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; pointer-events: none; animation: flicker 4s infinite; }
+@keyframes flicker { 0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; } 20%, 63% { opacity: .35; } }
+
+html.motion #w-air { height: 260lvh; }
+html.motion #w-air .air-head { position: sticky; top: 30svh; z-index: 2; padding-inline: var(--gutter); text-align: center; }
+html.motion #w-air .sky { display: block; position: absolute; inset: 0; margin: 0; }
+html.motion #w-air .float { position: absolute; }
+
+html.motion #w-faces .layers { display: block; position: absolute; inset: 0; margin: 0; }
+html.motion #w-faces .face { position: absolute; inset: 0; opacity: 0; }
+html.motion #w-faces .face:first-child { opacity: 1; }
+html.motion #w-faces .layers img { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; }
+html.motion #w-faces .layers .soft { display: block; transform: scale(1.04); }
+html.motion #w-faces .layers::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(21,15,26,.55), transparent 30%, transparent 62%, rgba(21,15,26,.85)); }
+html.motion #w-faces .world-head { position: absolute; z-index: 3; left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 64px); }
+/* Focus ring readout: distance marks slide under a fixed index, like pulling focus */
+html.motion #w-faces .focus { display: block; position: absolute; z-index: 3; left: 0; right: 0; bottom: 13%; overflow: hidden; }
+#w-faces .focus .index { position: absolute; left: 50%; top: 0; width: 0; height: 0; transform: translateX(-50%);
+  border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid var(--signal); }
+#w-faces .marks { display: flex; padding-top: 16px; padding-left: 50vw; width: max-content; }
+#w-faces .marks span { width: 92px; flex: none; text-align: left; font: 500 .78rem/1 var(--f-mono); letter-spacing: .08em; color: var(--bone);
+  border-left: 1px solid rgba(236,229,214,.7); padding: 14px 0 0 6px; transform: translateX(-1px); }
+#w-faces .focus .unit { position: absolute; right: var(--gutter); top: 0; color: var(--dim); }
+
+html.motion #w-rosarito .stage { display: grid; place-items: center; text-align: center; }
+html.motion #w-rosarito .glow { display: block; position: absolute; left: -20%; right: -20%; bottom: -30%; height: 90%; background: radial-gradient(closest-side, rgba(163,52,34,.85), rgba(163,52,34,0)); }
+html.motion #w-rosarito .photo { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; aspect-ratio: auto; opacity: 0; mix-blend-mode: luminosity; }
+html.motion #w-rosarito .inner { position: relative; z-index: 2; display: grid; justify-items: center; gap: 1.2rem; padding-inline: var(--gutter); }
+
+html.motion #w-close .stage { display: grid; place-items: center; text-align: center; }
+html.motion #w-close .aperture { position: absolute; inset: 0; max-width: none; aspect-ratio: auto; clip-path: circle(80% at 50% 45%); }
+html.motion #w-close .end { position: relative; z-index: 2; padding-inline: var(--gutter); opacity: 0; display: grid; justify-items: center; }
+html.motion #w-close .links { justify-content: center; }
+html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); text-align: center; font: 500 .7rem/1.4 var(--f-mono); letter-spacing: .12em; text-transform: uppercase; }
+#w-close .draft-note a { text-decoration: none; }
+
+/* ── Phones ── */
+@media (max-width: 600px) {
+  #w-open .name { font-size: clamp(3.4rem, 19vw, 13rem); }
+  html.motion #w-open .kicker { bottom: 24%; }
+  html.motion #w-open .cue { bottom: calc(env(safe-area-inset-bottom, 0px) + 92px); }
+  html.motion #w-open .line { bottom: 20%; }
+  .strip img { height: clamp(140px, 24svh, 260px); }
+  html.motion #w-street .print { width: 44vw; }
+  html.motion #w-paris .strip { margin-top: 6svh; }
+  html.motion #w-air .float { width: 62% !important; }
+  html.motion #w-air .float:nth-child(odd) { left: 4% !important; }
+  html.motion #w-air .float:nth-child(even) { left: 34% !important; }
+  #w-faces .marks span { width: 72px; }
+}
+/* Upright phones: centre each full-screen still on its subject */
+@media (orientation: portrait) {
+  html.motion #w-open .aperture img, html.motion #w-desert .layer, html.motion #w-faces .face img,
+  html.motion #w-rosarito .photo, html.motion #w-close .aperture img { object-position: var(--x, 50%) 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) { .hud .rec i, #w-neon .title, #w-open .grain { animation: none; } }
+</style>
+</head>
+<body>
+
+<header class="hud top" aria-hidden="true">
+  <span class="mark">JGVFILMS</span>
+  <span class="mono rec"><i></i><span class="tc" id="tc">00:00:00:00</span></span>
+</header>
+<div class="hud bottom" aria-hidden="true">
+  <div class="hud-row mono"><span id="worldName">01 / 10 · Through the lens</span></div>
+  <div class="scrub" id="scrub"><b id="scrubFill"></b></div>
+</div>
+
+<main>
+  <!-- 01 Opening -->
+  <section class="world" id="w-open" data-name="Through the lens" data-motion="aperture opens">
+    <div class="stage">
+      <div class="aperture">
+        <img class="ap-1" fetchpriority="high" src="/portfolio/jgvfilms/img/open-1.jpg" style="--x:34%" alt="J. Garrett Vorreuter with a RED camera on set">
+        <img class="ap-2" fetchpriority="low" decoding="async" src="/portfolio/jgvfilms/img/open-3.jpg" style="--x:46%" alt="J. Garrett Vorreuter at dusk, camera on his shoulder, pointing out the next shot">
+        <div class="grain" aria-hidden="true"></div>
+        <img class="ap-color" fetchpriority="low" decoding="async" src="/portfolio/jgvfilms/img/open-5.jpg" style="--x:56%" alt="Garrett with a cinema camera at Salvation Mountain, under a hand-painted Respect the Art sign">
+        <img class="ap-3" fetchpriority="low" decoding="async" src="/portfolio/jgvfilms/img/open-4.jpg" style="--x:42%" alt="Black-and-white still: filming on a Paris bridge">
+      </div>
+      <div class="reticle"></div>
+      <h1 class="name display"><span>J. Garrett</span> <span>Vorreuter</span></h1>
+      <p class="kicker mono">Director · Cinematographer · Producer · Writer</p>
+      <p class="line serif">Ten years of run and gun. Whatever was in front of the lens, whatever was in the bag.</p>
+      <p class="cue mono">Scroll to roll ↓</p>
+    </div>
+  </section>
+
+  <!-- 02 Reel -->
+  <section class="world" id="w-reel" data-name="The reel" data-motion="screen rises">
+    <div class="world-head">
+      <span class="mono credit">JGVFILMS reel</span>
+      <h2 class="display" style="font-size:clamp(2.8rem,8vw,6.5rem)">Roll it.</h2>
+    </div>
+    <div class="player" id="reelPlayer">
+      <iframe src="https://www.youtube-nocookie.com/embed/kytIxvYbTXw?playsinline=1" title="JGVFILMS reel" loading="lazy" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+  </section>
+
+  <!-- 03 Street -->
+  <section class="world" id="w-street" data-name="The street" data-motion="prints deal out">
+    <div class="stage">
+      <div class="stage-head world-head">
+        <span class="mono credit">Documentary · Street</span>
+        <h2 class="display" style="font-size:clamp(2.8rem,8vw,6.5rem)">The street</h2>
+        <p>Marches, sidewalks, strangers. Shot fast, shot light.</p>
+      </div>
+      <div class="table">
+        <figure class="print" data-to="-30,-16,-6"><img src="/portfolio/jgvfilms/img/street-1.jpg" srcset="/portfolio/jgvfilms/img/street-1-800.jpg 800w, /portfolio/jgvfilms/img/street-1.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A crowd of protesters with hand-painted signs" loading="lazy"></figure>
+        <figure class="print" data-to="29,-20,4"><img src="/portfolio/jgvfilms/img/street-2.jpg" srcset="/portfolio/jgvfilms/img/street-2-800.jpg 800w, /portfolio/jgvfilms/img/street-2.jpg 1257w" sizes="(max-width: 600px) 45vw, 30vw" alt="Marchers cheering with signs raised" loading="lazy"></figure>
+        <figure class="print" data-to="-4,-2,-2"><img src="/portfolio/jgvfilms/img/street-6.jpg" srcset="/portfolio/jgvfilms/img/street-6-800.jpg 800w, /portfolio/jgvfilms/img/street-6.jpg 1231w" sizes="(max-width: 600px) 45vw, 30vw" alt="A man speaking to camera inside a crowd" loading="lazy"></figure>
+        <figure class="print" data-to="-28,24,3"><img src="/portfolio/jgvfilms/img/street-3.jpg" srcset="/portfolio/jgvfilms/img/street-3-800.jpg 800w, /portfolio/jgvfilms/img/street-3.jpg 1149w" sizes="(max-width: 600px) 45vw, 30vw" alt="A street musician playing guitar on a sidewalk" loading="lazy"></figure>
+        <figure class="print" data-to="27,22,-4"><img src="/portfolio/jgvfilms/img/street-5.jpg" srcset="/portfolio/jgvfilms/img/street-5-800.jpg 800w, /portfolio/jgvfilms/img/street-5.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A girl singing in front of a graffiti wall" loading="lazy"></figure>
+        <figure class="print" data-to="2,30,5"><img src="/portfolio/jgvfilms/img/street-4.jpg" srcset="/portfolio/jgvfilms/img/street-4-800.jpg 800w, /portfolio/jgvfilms/img/street-4.jpg 1224w" sizes="(max-width: 600px) 45vw, 30vw" alt="Two men talking under a graffiti mural at night" loading="lazy"></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 Paris -->
+  <section class="world" id="w-paris" data-name="Paris" data-motion="film strip runs">
+    <div class="stage">
+      <div class="stage-head world-head">
+        <span class="mono credit">Sophie: Quai du Louvre · 2016 · Cinematographer</span>
+        <h2 class="display" style="font-size:clamp(2.8rem,8vw,6.5rem)">Paris</h2>
+        <p class="serif" style="font-size:1.3rem">Eyes, hands, the river. A city shot close.</p>
+      </div>
+      <div class="strip-wrap">
+        <div class="strip">
+          <figure><img src="/portfolio/jgvfilms/img/paris-1.jpg" loading="lazy" alt="Quai du Louvre street sign"><figcaption>14A ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-6.jpg" loading="lazy" alt="Extreme close-up of a woman's eyes"><figcaption>15 ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-2.jpg" loading="lazy" alt="A close kiss"><figcaption>15A ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-7.jpg" loading="lazy" alt="A woman on a crowded metro"><figcaption>16 ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-4.jpg" loading="lazy" alt="An accordion player by the Seine"><figcaption>16A ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-3.jpg" loading="lazy" alt="A couple under a tree near the Eiffel Tower"><figcaption>17 ▸</figcaption></figure>
+          <figure><img src="/portfolio/jgvfilms/img/paris-5.jpg" loading="lazy" alt="Two hands reaching toward each other against the sky"><figcaption>17A ▸</figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 Desert -->
+  <section class="world" id="w-desert" data-name="Desert" data-motion="dawn to night">
+    <div class="stage">
+      <div class="frames">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-1.jpg" style="--x:45%" alt="An empty desert highway at first light" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-2.jpg" style="--x:52%" alt="A couple embracing in the desert scrub" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-3.jpg" style="--x:30%" alt="Running through Joshua trees at blue hour" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-6.jpg" style="--x:50%" alt="Hands at a typewriter in amber light" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-4.jpg" style="--x:45%" alt="Two figures embracing against a violet dusk" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-5.jpg" style="--x:58%" alt="An embrace under a crescent moon" loading="lazy">
+      </div>
+      <div class="dusk"></div><div class="night"></div>
+      <div class="world-head">
+        <span class="mono credit" style="color:#d9c7a6">Mojave · 2017 · Cinematographer</span>
+      </div>
+      <div class="hud-in">
+        <span class="clock" id="clock">05:42 · First light</span>
+        <h2 class="title display">Mojave</h2>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 Neon -->
+  <section class="world" id="w-neon" data-name="After dark" data-motion="neon slats open">
+    <div class="stage">
+      <div class="stage-head world-head">
+        <span class="mono credit" style="color:#c99ad6">Night exteriors · 2019</span>
+      </div>
+      <h2 class="title">After dark</h2>
+      <div class="grid">
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-1.jpg" srcset="/portfolio/jgvfilms/img/neon-1-800.jpg 800w, /portfolio/jgvfilms/img/neon-1.jpg 1506w" sizes="(max-width: 640px) 50vw, 33vw" alt="Two people in a convertible under sodium light" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-2.jpg" srcset="/portfolio/jgvfilms/img/neon-2-800.jpg 800w, /portfolio/jgvfilms/img/neon-2.jpg 1520w" sizes="(max-width: 640px) 50vw, 33vw" alt="A confrontation lit in magenta" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-3.jpg" srcset="/portfolio/jgvfilms/img/neon-3-800.jpg 800w, /portfolio/jgvfilms/img/neon-3.jpg 1512w" sizes="(max-width: 640px) 50vw, 33vw" alt="A face in blue light, cigarette lit" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-4.jpg" srcset="/portfolio/jgvfilms/img/neon-4-800.jpg 800w, /portfolio/jgvfilms/img/neon-4.jpg 1512w" sizes="(max-width: 640px) 50vw, 33vw" alt="A woman lit violet, hand to her mouth" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-5.jpg" srcset="/portfolio/jgvfilms/img/neon-5-800.jpg 800w, /portfolio/jgvfilms/img/neon-5.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="Two men forehead to forehead at night" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-6.jpg" srcset="/portfolio/jgvfilms/img/neon-6-800.jpg 800w, /portfolio/jgvfilms/img/neon-6.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="A woman in a car window, violet edge light" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 Air -->
+  <section class="world" id="w-air" data-name="Air" data-motion="layers drift (parallax)">
+    <div class="air-head world-head" style="max-width:none">
+      <span class="mono credit">Movement films</span>
+      <h2 class="title serif">Weightless</h2>
+      <p>Dancers, wind, salt flats, open sky.</p>
+    </div>
+    <div class="sky">
+      <figure class="float" data-speed="0.9" style="left:4%;top:8%;width:38%"><img src="/portfolio/jgvfilms/img/air-2.jpg" srcset="/portfolio/jgvfilms/img/air-2-800.jpg 800w, /portfolio/jgvfilms/img/air-2.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer lifted overhead on a hilltop" loading="lazy"></figure>
+      <figure class="float" data-speed="0.4" style="left:58%;top:14%;width:34%"><img src="/portfolio/jgvfilms/img/air-3.jpg" srcset="/portfolio/jgvfilms/img/air-3-800.jpg 800w, /portfolio/jgvfilms/img/air-3.jpg 1187w" sizes="(max-width: 600px) 62vw, 40vw" alt="A man with arms open to the clouds" loading="lazy"></figure>
+      <figure class="float" data-speed="1.3" style="left:30%;top:36%;width:28%"><img src="/portfolio/jgvfilms/img/air-1.jpg" srcset="/portfolio/jgvfilms/img/air-1-800.jpg 800w, /portfolio/jgvfilms/img/air-1.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer underwater in teal light" loading="lazy"></figure>
+      <figure class="float" data-speed="0.6" style="left:66%;top:50%;width:30%"><img src="/portfolio/jgvfilms/img/air-5.jpg" srcset="/portfolio/jgvfilms/img/air-5-800.jpg 800w, /portfolio/jgvfilms/img/air-5.jpg 969w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer mid-kick on the salt flats" loading="lazy"></figure>
+      <figure class="float" data-speed="1.1" style="left:6%;top:60%;width:36%"><img src="/portfolio/jgvfilms/img/air-4.jpg" srcset="/portfolio/jgvfilms/img/air-4-800.jpg 800w, /portfolio/jgvfilms/img/air-4.jpg 1391w" sizes="(max-width: 600px) 62vw, 40vw" alt="A cloaked figure standing in the sea" loading="lazy"></figure>
+      <figure class="float" data-speed="0.5" style="left:44%;top:74%;width:40%"><img src="/portfolio/jgvfilms/img/air-6.jpg" srcset="/portfolio/jgvfilms/img/air-6-800.jpg 800w, /portfolio/jgvfilms/img/air-6.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="Two dancers pulling dark fabric between them" loading="lazy"></figure>
+      <figure class="float" data-speed="0.8" style="left:12%;top:86%;width:30%"><img src="/portfolio/jgvfilms/img/air-7.jpg" srcset="/portfolio/jgvfilms/img/air-7-800.jpg 800w, /portfolio/jgvfilms/img/air-7.jpg 1145w" sizes="(max-width: 600px) 62vw, 40vw" alt="Clouds reflected in still water" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <!-- 07 Faces -->
+  <section class="world" id="w-faces" data-name="Faces" data-motion="focus pulls">
+    <div class="stage">
+      <div class="layers">
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-1-soft.jpg" alt="" loading="lazy" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-1.jpg" alt="Portrait in a white beanie against a violet studio wall" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-2-soft.jpg" alt="" loading="lazy" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-2.jpg" alt="Studio portrait under a softbox, pink cyc" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-3-soft.jpg" alt="" loading="lazy" style="--x:30%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-3.jpg" alt="Two women in patterned hijabs, window light" loading="lazy" style="--x:30%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-4-soft.jpg" alt="" loading="lazy" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-4.jpg" alt="A woman with curly hair looking off camera" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-5-soft.jpg" alt="" loading="lazy" style="--x:30%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-5.jpg" alt="Extreme close-up of eyes with dark makeup" loading="lazy" style="--x:30%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-6-soft.jpg" alt="" loading="lazy" style="--x:55%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-6.jpg" alt="A face behind a translucent white veil" loading="lazy" style="--x:55%"></div>
+      </div>
+      <div class="world-head">
+        <span class="mono credit" style="color:#b9a6c9">Portraits · studio and location</span>
+        <h2 class="display" style="font-size:clamp(2.8rem,8vw,6.5rem)">Faces</h2>
+      </div>
+      <div class="focus" aria-hidden="true">
+        <div class="index"></div>
+        <span class="unit mono">Focus · ft</span>
+        <div class="marks"><span>∞</span><span>30</span><span>15</span><span>10</span><span>8</span><span>6</span><span>5</span><span>4</span><span>3.5</span><span>3</span><span>2.5</span><span>2</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 ROSARITO -->
+  <section class="world" id="w-rosarito" data-name="ROSARITO" data-motion="red light rises">
+    <div class="stage">
+      <div class="glow"></div>
+      <img class="photo" src="/portfolio/jgvfilms/img/rosarito-1.jpg" style="--x:42%" alt="Garrett at a cliffside railing above the Pacific at dusk" loading="lazy">
+      <div class="inner">
+        <span class="mono" style="color:rgba(237,230,218,.65)">In development · Feature · Writer</span>
+        <h2 class="t"><span>ROSARITO</span></h2>
+        <div class="copy" style="display:grid;gap:1.2rem;justify-items:center">
+          <p class="log">She faked her own kidnapping to get away from her father. He paid the ransom, and then paid to have her killed.</p>
+          <a class="btn btn-blood" href="/rosarito">Read the pitch →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 Close -->
+  <section class="world" id="w-close" data-name="Cut" data-motion="iris closes">
+    <div class="stage">
+      <div class="aperture"><img src="/portfolio/jgvfilms/img/close-1.jpg" style="--x:50%" alt="Portrait of J. Garrett Vorreuter" loading="lazy"></div>
+      <div class="end">
+        <span class="mono credit">Buffalo, NY · Available for work</span>
+        <h2 class="display">Let’s make<br>something.</h2>
+        <div class="links">
+          <a class="btn btn-signal" href="/u/jgvfilms">Message me on FVC →</a>
+          <a class="btn" href="https://www.imdb.com/name/nm7102371/" target="_blank" rel="noopener">IMDb ↗</a>
+          <a class="btn" href="https://www.instagram.com/jgvfilms/" target="_blank" rel="noopener">Instagram ↗</a>
+        </div>
+      </div>
+      <p class="draft-note"><a href="/">A member of THEFVC.IS</a></p>
+    </div>
+  </section>
+</main>
+
+<script src="/portfolio/jgvfilms/vendor/gsap.min.js"></script>
+<script src="/portfolio/jgvfilms/vendor/ScrollTrigger.min.js"></script>
+<script src="/portfolio/jgvfilms/vendor/lenis.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // The reel follows the member profile, so updating it in the app updates it here.
+  function embedUrl(url) {
+    var t = String(url || "").trim();
+    var yt = t.match(/(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/|youtube\.com\/(?:shorts|embed|live)\/)([\w-]{11})/);
+    if (yt) { var st = t.match(/[?&](?:t|start)=(\d+)/); return "https://www.youtube-nocookie.com/embed/" + yt[1] + "?playsinline=1" + (st ? "&start=" + st[1] : ""); }
+    var vm = t.match(/vimeo\.com\/(?:channels\/[\w-]+\/|groups\/[\w-]+\/videos\/|video\/)?(\d+)(?:\/([\w]+))?/);
+    if (vm) { var h = vm[2] || (t.match(/[?&]h=([\w]+)/) || [])[1]; return "https://player.vimeo.com/video/" + vm[1] + (h ? "?h=" + h : ""); }
+    return null;
+  }
+  fetch("/api/profiles/jgvfilms", { headers: { Accept: "application/json" } })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) {
+      var src = embedUrl(d && d.profile && d.profile.reelUrl);
+      var frame = document.querySelector("#reelPlayer iframe");
+      if (src && frame && frame.src !== src) frame.src = src;
+    })
+    .catch(function () { /* keep the baked-in reel */ });
+
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || !window.gsap || !window.ScrollTrigger) { document.documentElement.classList.remove("motion"); return; } // static layout stays
+  document.documentElement.classList.add("motion");
+  gsap.registerPlugin(ScrollTrigger);
+  ScrollTrigger.config({ ignoreMobileResize: true });
+
+  // Smooth scroll, driven by GSAP's ticker so pins and scrubs stay in lockstep.
+  if (window.Lenis) {
+    try {
+      var lenis = new Lenis({ lerp: 0.09 });
+      lenis.on("scroll", ScrollTrigger.update);
+      gsap.ticker.add(function (t) { lenis.raf(t * 1000); });
+      gsap.ticker.lagSmoothing(0);
+    } catch (e) {}
+  }
+
+  var pin = function (sel, len) {
+    return { trigger: sel, start: "top top", end: len, pin: true, scrub: true, invalidateOnRefresh: true };
+  };
+
+  /* 01 Aperture opens */
+  gsap.timeline({ scrollTrigger: pin("#w-open .stage", "+=210%") })
+    .fromTo("#w-open .aperture", { clipPath: "circle(16% at 50% 50%)" }, { clipPath: "circle(78% at 50% 50%)", ease: "power1.in", duration: 1 })
+    .to("#w-open .name", { letterSpacing: "0.35em", opacity: 0, y: -60, duration: 0.7 }, 0)
+    .to("#w-open .kicker, #w-open .cue", { opacity: 0, duration: 0.3 }, 0)
+    .to("#w-open .reticle", { opacity: 0, scale: 2.4, duration: 0.6 }, 0)
+    .to("#w-open .ap-2", { opacity: 1, duration: 0.25 }, 1.0)
+    .to("#w-open .grain", { opacity: 0.55, duration: 0.25 }, 1.0)
+    .to("#w-open .ap-color", { opacity: 1, duration: 0.25 }, 1.45)
+    .to("#w-open .ap-3", { opacity: 1, duration: 0.25 }, 1.85)
+    .fromTo("#w-open .line", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3 }, 1.9)
+    .to({}, { duration: 0.2 });
+
+  /* 02 The screen rises into place */
+  gsap.fromTo("#w-reel .player", { scale: 0.82, opacity: 0.4 }, { scale: 1, opacity: 1, ease: "none",
+    scrollTrigger: { trigger: "#w-reel", start: "top 85%", end: "center 55%", scrub: true } });
+
+  /* 03 Prints deal out from a stack */
+  var dealTl = gsap.timeline({ scrollTrigger: pin("#w-street .stage", "+=150%") });
+  gsap.utils.toArray("#w-street .print").forEach(function (p, i) {
+    var t = p.dataset.to.split(",").map(Number);
+    dealTl.fromTo(p,
+      { xPercent: -50, yPercent: -50, x: 0, y: i * -3, rotation: (i % 2 ? 1 : -1) * (2 + i), scale: 0.9 },
+      { xPercent: -50, yPercent: -50, x: function () { return t[0] * innerWidth / 100; }, y: function () { return t[1] * innerHeight / 100; },
+        rotation: t[2], scale: 1, ease: "power2.out", duration: 1 }, i * 0.14);
+  });
+  dealTl.to({}, { duration: 0.3 });
+
+  /* 03 Film strip runs sideways */
+  var strip = document.querySelector("#w-paris .strip");
+  var stripDist = function () { return Math.max(0, strip.scrollWidth - innerWidth + 32); };
+  gsap.to(strip, { x: function () { return -stripDist(); }, ease: "none",
+    scrollTrigger: { trigger: "#w-paris .stage", start: "top top", end: function () { return "+=" + stripDist(); }, pin: true, scrub: true, invalidateOnRefresh: true } });
+
+  /* 04 Dawn to night */
+  var layers = gsap.utils.toArray("#w-desert .layer");
+  var clock = document.getElementById("clock");
+  var phases = [[0, "First light"], [0.3, "Midday"], [0.55, "Golden hour"], [0.72, "Dusk"], [0.86, "Night"]];
+  var desertTl = gsap.timeline({ scrollTrigger: Object.assign(pin("#w-desert .stage", "+=340%"), {
+    onUpdate: function (self) {
+      var m = Math.round(342 + self.progress * (1398 - 342)); // 05:42 → 23:18
+      var label = phases.filter(function (p) { return self.progress >= p[0]; }).pop()[1];
+      clock.textContent = String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0") + " · " + label;
+    } }) });
+  layers.forEach(function (im, i) {
+    if (i) desertTl.fromTo(im, { opacity: 0 }, { opacity: 1, duration: 0.6 }, i);
+    desertTl.fromTo(im, { scale: 1.14 }, { scale: 1, ease: "none", duration: 1.6 }, Math.max(0, i - 0.6));
+  });
+  desertTl.fromTo("#w-desert .title", { letterSpacing: "0.02em" }, { letterSpacing: "0.38em", ease: "none", duration: layers.length }, 0)
+    .fromTo("#w-desert .dusk", { opacity: 0 }, { opacity: 1, duration: 1.5 }, 2.2)
+    .fromTo("#w-desert .night", { opacity: 0 }, { opacity: 1, duration: 1.4 }, 4.2);
+
+  /* 05 Neon slats open */
+  gsap.timeline({ scrollTrigger: pin("#w-neon .stage", "+=160%") })
+    .fromTo("#w-neon .cell", { clipPath: "inset(50% 0% 50% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", stagger: 0.16, duration: 0.6, ease: "power1.inOut" })
+    .fromTo("#w-neon .title", { scale: 1.25, opacity: 0.2 }, { scale: 1, opacity: 1, duration: 0.6 }, 0)
+    .to("#w-neon .title", { opacity: 0.12, duration: 0.4 }, 1.1);
+
+  /* 06 Layers drift at different depths */
+  gsap.utils.toArray("#w-air .float").forEach(function (el) {
+    var s = parseFloat(el.dataset.speed);
+    gsap.fromTo(el, { y: function () { return s * innerHeight * 0.45; } }, { y: function () { return -s * innerHeight * 0.45; }, ease: "none",
+      scrollTrigger: { trigger: "#w-air", start: "top bottom", end: "bottom top", scrub: true, invalidateOnRefresh: true } });
+  });
+
+  /* 07 Focus pulls: each portrait racks from soft to sharp as the ring turns */
+  var faces = gsap.utils.toArray("#w-faces .face");
+  var marks = document.querySelector("#w-faces .marks");
+  var facesTl = gsap.timeline({ scrollTrigger: pin("#w-faces .stage", "+=320%") });
+  faces.forEach(function (im, i) {
+    // A pre-blurred copy sits under each still; fading the sharp one in reads as a focus pull
+    // without animating a CSS blur, which is expensive on iPhone.
+    if (i) facesTl.fromTo(im, { opacity: 0 }, { opacity: 1, duration: 0.2 }, i);
+    facesTl.fromTo(im.querySelector(".sharp"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, i)
+      .fromTo(im, { scale: 1.05 }, { scale: 1, duration: 0.6, ease: "power2.out" }, i);
+  });
+  facesTl.fromTo(marks, { x: 0 }, { x: function () { return -(marks.scrollWidth - innerWidth / 2 - 46); }, ease: "none", duration: faces.length }, 0);
+
+  /* 08 Red light rises */
+  gsap.timeline({ scrollTrigger: pin("#w-rosarito .stage", "+=160%") })
+    .fromTo("#w-rosarito .glow", { yPercent: 70, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 1 })
+    .fromTo("#w-rosarito .t span", { letterSpacing: "1.1em", opacity: 0 }, { letterSpacing: "0.12em", opacity: 1, duration: 1 }, 0)
+    .fromTo("#w-rosarito .photo", { opacity: 0, scale: 1.08 }, { opacity: 0.38, scale: 1, duration: 1 }, 0.2)
+    .fromTo("#w-rosarito .copy", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45 }, 0.85);
+
+  /* 09 Iris closes on the portrait */
+  gsap.timeline({ scrollTrigger: pin("#w-close .stage", "+=150%") })
+    .to({}, { duration: 0.25 })
+    .fromTo("#w-close .aperture", { clipPath: "circle(78% at 50% 45%)" }, { clipPath: "circle(0% at 50% 45%)", ease: "power2.in", duration: 1 })
+    .fromTo("#w-close .end", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4 }, 0.9);
+
+  /* HUD: scroll is the playhead */
+  var worlds = gsap.utils.toArray(".world");
+  var nameEl = document.getElementById("worldName");
+  var pad = function (n) { return String(n).padStart(2, "0"); };
+  worlds.forEach(function (w, i) {
+    ScrollTrigger.create({ trigger: w, start: "top 55%", end: "bottom 55%",
+      onToggle: function (self) { if (!self.isActive) return;
+        nameEl.textContent = pad(i + 1) + " / " + pad(worlds.length) + " · " + w.dataset.name; } });
+  });
+  var tc = document.getElementById("tc"), fill = document.getElementById("scrubFill"), scrub = document.getElementById("scrub");
+  var RUNTIME = 9 * 60 * 24; // the page plays as a nine-minute reel at 24fps
+  ScrollTrigger.create({ start: 0, end: "max", onUpdate: function (self) {
+    var f = Math.round(self.progress * RUNTIME);
+    tc.textContent = "00:" + pad(Math.floor(f / 1440)) + ":" + pad(Math.floor(f / 24) % 60) + ":" + pad(f % 24);
+    fill.style.width = (self.progress * 100) + "%";
+  } });
+  function ticks() {
+    scrub.querySelectorAll("i").forEach(function (t) { t.remove(); });
+    var max = ScrollTrigger.maxScroll(window) || 1;
+    worlds.forEach(function (w) {
+      var t = document.createElement("i");
+      t.style.left = Math.min(100, (w.getBoundingClientRect().top + scrollY) / max * 100) + "%";
+      scrub.appendChild(t);
+    });
+  }
+  ScrollTrigger.addEventListener("refresh", ticks);
+  window.addEventListener("load", function () { ScrollTrigger.refresh(); });
+  ticks();
+})();
+</script>
+</body>
+</html>

@@ -50,8 +50,8 @@
   --chart-4: 320 47% 45%;
   --chart-5: 20 73% 48%;
 
-  --font-sans: Satoshi, Inter, sans-serif;
-  --font-display: "Clash Display", sans-serif;
+  --font-sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
   --radius: 0.5rem;
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
