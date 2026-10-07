@@ -11,6 +11,7 @@
 <meta property="og:url" content="https://www.thefvc.is/jgvfilms">
 <meta property="og:image" content="https://www.thefvc.is/portfolio/jgvfilms/img/open-1.jpg">
 <meta name="theme-color" content="#0b0a09">
+<link rel="preload" as="image" href="/portfolio/jgvfilms/img/open-1.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Bodoni+Moda:opsz,wght@6..96,900&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
@@ -147,6 +148,7 @@ html:not(.motion) .hud.bottom { display: none; }
 #w-faces { background: #150f1a; }
 #w-faces .layers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; margin-top: 1.4rem; }
 #w-faces .layers img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+#w-faces .layers .soft { display: none; }
 #w-faces .focus { display: none; }
 
 /* ROSARITO */
@@ -171,7 +173,7 @@ html:not(.motion) .hud.bottom { display: none; }
 
 /* ── Motion mode: pinned full-screen stages ── */
 html.motion .world { padding: 0; }
-html.motion .stage { position: relative; height: 100svh; overflow: hidden; }
+html.motion .stage { position: relative; height: 100vh; height: 100lvh; overflow: hidden; }
 
 html.motion #w-open .stage { display: block; }
 html.motion #w-open .aperture { position: absolute; inset: 0; max-width: none; aspect-ratio: auto; clip-path: circle(16% at 50% 50%); }
@@ -198,6 +200,7 @@ html.motion #w-paris .strip { margin-top: 12svh; }
 
 html.motion #w-desert .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; aspect-ratio: auto; }
 html.motion #w-desert .frames { display: block; position: absolute; inset: 0; }
+html.motion #w-desert .frames::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,14,8,.5), transparent 26%, transparent 60%, rgba(20,14,8,.6)); }
 html.motion #w-desert .dusk, html.motion #w-desert .night { display: block; position: absolute; inset: 0; pointer-events: none; opacity: 0; }
 #w-desert .dusk { background: linear-gradient(180deg, rgba(120,60,110,.0), rgba(214,110,60,.55)); mix-blend-mode: soft-light; }
 #w-desert .night { background: linear-gradient(180deg, rgba(10,16,40,.75), rgba(10,14,30,.35)); }
@@ -210,14 +213,16 @@ html.motion #w-neon .cell img { aspect-ratio: auto; }
 html.motion #w-neon .title { position: absolute; z-index: 4; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; pointer-events: none; animation: flicker 4s infinite; }
 @keyframes flicker { 0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; } 20%, 63% { opacity: .35; } }
 
-html.motion #w-air { height: 260svh; }
+html.motion #w-air { height: 260lvh; }
 html.motion #w-air .air-head { position: sticky; top: 30svh; z-index: 2; padding-inline: var(--gutter); text-align: center; }
 html.motion #w-air .sky { display: block; position: absolute; inset: 0; margin: 0; }
 html.motion #w-air .float { position: absolute; }
 
 html.motion #w-faces .layers { display: block; position: absolute; inset: 0; margin: 0; }
-html.motion #w-faces .layers img { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; opacity: 0; }
-html.motion #w-faces .layers img:first-child { opacity: 1; }
+html.motion #w-faces .face { position: absolute; inset: 0; opacity: 0; }
+html.motion #w-faces .face:first-child { opacity: 1; }
+html.motion #w-faces .layers img { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; }
+html.motion #w-faces .layers .soft { display: block; transform: scale(1.04); }
 html.motion #w-faces .layers::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(21,15,26,.55), transparent 30%, transparent 62%, rgba(21,15,26,.85)); }
 html.motion #w-faces .world-head { position: absolute; z-index: 3; left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 64px); }
 /* Focus ring readout: distance marks slide under a fixed index, like pulling focus */
@@ -226,8 +231,7 @@ html.motion #w-faces .focus { display: block; position: absolute; z-index: 3; le
   border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid var(--signal); }
 #w-faces .marks { display: flex; padding-top: 16px; padding-left: 50vw; width: max-content; }
 #w-faces .marks span { width: 92px; flex: none; text-align: left; font: 500 .78rem/1 var(--f-mono); letter-spacing: .08em; color: var(--bone);
-  border-left: 1px solid rgba(236,229,214,.7); padding: 14px 0 0 0; transform: translateX(-1px); }
-#w-faces .marks span::first-letter { margin-left: -.3em; }
+  border-left: 1px solid rgba(236,229,214,.7); padding: 14px 0 0 6px; transform: translateX(-1px); }
 #w-faces .focus .unit { position: absolute; right: var(--gutter); top: 0; color: var(--dim); }
 
 html.motion #w-rosarito .stage { display: grid; place-items: center; text-align: center; }
@@ -242,6 +246,26 @@ html.motion #w-close .links { justify-content: center; }
 html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); text-align: center; font: 500 .7rem/1.4 var(--f-mono); letter-spacing: .12em; text-transform: uppercase; }
 #w-close .draft-note a { text-decoration: none; }
 
+/* ── Phones ── */
+@media (max-width: 600px) {
+  #w-open .name { font-size: clamp(3.4rem, 19vw, 13rem); }
+  html.motion #w-open .kicker { bottom: 24%; }
+  html.motion #w-open .cue { bottom: calc(env(safe-area-inset-bottom, 0px) + 92px); }
+  html.motion #w-open .line { bottom: 20%; }
+  .strip img { height: clamp(140px, 24svh, 260px); }
+  html.motion #w-street .print { width: 44vw; }
+  html.motion #w-paris .strip { margin-top: 6svh; }
+  html.motion #w-air .float { width: 62% !important; }
+  html.motion #w-air .float:nth-child(odd) { left: 4% !important; }
+  html.motion #w-air .float:nth-child(even) { left: 34% !important; }
+  #w-faces .marks span { width: 72px; }
+}
+/* Upright phones: centre each full-screen still on its subject */
+@media (orientation: portrait) {
+  html.motion #w-open .aperture img, html.motion #w-desert .layer, html.motion #w-faces .face img,
+  html.motion #w-rosarito .photo, html.motion #w-close .aperture img { object-position: var(--x, 50%) 50%; }
+}
+
 @media (prefers-reduced-motion: reduce) { .hud .rec i, #w-neon .title, #w-open .grain { animation: none; } }
 </style>
 </head>
@@ -252,7 +276,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <span class="mono rec"><i></i><span class="tc" id="tc">00:00:00:00</span></span>
 </header>
 <div class="hud bottom" aria-hidden="true">
-  <div class="hud-row mono"><span id="worldName">01 / 10 · Through the lens</span><span class="motion-name" id="motionName">Motion: aperture opens</span></div>
+  <div class="hud-row mono"><span id="worldName">01 / 10 · Through the lens</span></div>
   <div class="scrub" id="scrub"><b id="scrubFill"></b></div>
 </div>
 
@@ -261,11 +285,11 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <section class="world" id="w-open" data-name="Through the lens" data-motion="aperture opens">
     <div class="stage">
       <div class="aperture">
-        <img class="ap-1" src="/portfolio/jgvfilms/img/open-1.jpg" alt="J. Garrett Vorreuter with a RED camera on set">
-        <img class="ap-2" src="/portfolio/jgvfilms/img/open-3.jpg" alt="J. Garrett Vorreuter at dusk, camera on his shoulder, pointing out the next shot">
+        <img class="ap-1" src="/portfolio/jgvfilms/img/open-1.jpg" style="--x:34%" alt="J. Garrett Vorreuter with a RED camera on set">
+        <img class="ap-2" src="/portfolio/jgvfilms/img/open-3.jpg" style="--x:46%" alt="J. Garrett Vorreuter at dusk, camera on his shoulder, pointing out the next shot">
         <div class="grain" aria-hidden="true"></div>
-        <img class="ap-color" src="/portfolio/jgvfilms/img/open-5.jpg" alt="Garrett with a cinema camera at Salvation Mountain, under a hand-painted Respect the Art sign">
-        <img class="ap-3" src="/portfolio/jgvfilms/img/open-4.jpg" alt="Black-and-white still: filming on a Paris bridge">
+        <img class="ap-color" src="/portfolio/jgvfilms/img/open-5.jpg" style="--x:56%" alt="Garrett with a cinema camera at Salvation Mountain, under a hand-painted Respect the Art sign">
+        <img class="ap-3" src="/portfolio/jgvfilms/img/open-4.jpg" style="--x:42%" alt="Black-and-white still: filming on a Paris bridge">
       </div>
       <div class="reticle"></div>
       <h1 class="name display"><span>J. Garrett</span> <span>Vorreuter</span></h1>
@@ -282,7 +306,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
       <h2 class="display" style="font-size:clamp(2.8rem,8vw,6.5rem)">Roll it.</h2>
     </div>
     <div class="player" id="reelPlayer">
-      <iframe src="https://www.youtube-nocookie.com/embed/kytIxvYbTXw" title="JGVFILMS reel" loading="lazy" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      <iframe src="https://www.youtube-nocookie.com/embed/kytIxvYbTXw?playsinline=1" title="JGVFILMS reel" loading="lazy" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
     </div>
   </section>
 
@@ -295,12 +319,12 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
         <p>Marches, sidewalks, strangers. Shot fast, shot light.</p>
       </div>
       <div class="table">
-        <figure class="print" data-to="-30,-16,-6"><img src="/portfolio/jgvfilms/img/street-1.jpg" alt="A crowd of protesters with hand-painted signs" loading="lazy"></figure>
-        <figure class="print" data-to="29,-20,4"><img src="/portfolio/jgvfilms/img/street-2.jpg" alt="Marchers cheering with signs raised" loading="lazy"></figure>
-        <figure class="print" data-to="-4,-2,-2"><img src="/portfolio/jgvfilms/img/street-6.jpg" alt="A man speaking to camera inside a crowd" loading="lazy"></figure>
-        <figure class="print" data-to="-28,24,3"><img src="/portfolio/jgvfilms/img/street-3.jpg" alt="A street musician playing guitar on a sidewalk" loading="lazy"></figure>
-        <figure class="print" data-to="27,22,-4"><img src="/portfolio/jgvfilms/img/street-5.jpg" alt="A girl singing in front of a graffiti wall" loading="lazy"></figure>
-        <figure class="print" data-to="2,30,5"><img src="/portfolio/jgvfilms/img/street-4.jpg" alt="Two men talking under a graffiti mural at night" loading="lazy"></figure>
+        <figure class="print" data-to="-30,-16,-6"><img src="/portfolio/jgvfilms/img/street-1.jpg" srcset="/portfolio/jgvfilms/img/street-1-800.jpg 800w, /portfolio/jgvfilms/img/street-1.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A crowd of protesters with hand-painted signs" loading="lazy"></figure>
+        <figure class="print" data-to="29,-20,4"><img src="/portfolio/jgvfilms/img/street-2.jpg" srcset="/portfolio/jgvfilms/img/street-2-800.jpg 800w, /portfolio/jgvfilms/img/street-2.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="Marchers cheering with signs raised" loading="lazy"></figure>
+        <figure class="print" data-to="-4,-2,-2"><img src="/portfolio/jgvfilms/img/street-6.jpg" srcset="/portfolio/jgvfilms/img/street-6-800.jpg 800w, /portfolio/jgvfilms/img/street-6.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A man speaking to camera inside a crowd" loading="lazy"></figure>
+        <figure class="print" data-to="-28,24,3"><img src="/portfolio/jgvfilms/img/street-3.jpg" srcset="/portfolio/jgvfilms/img/street-3-800.jpg 800w, /portfolio/jgvfilms/img/street-3.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A street musician playing guitar on a sidewalk" loading="lazy"></figure>
+        <figure class="print" data-to="27,22,-4"><img src="/portfolio/jgvfilms/img/street-5.jpg" srcset="/portfolio/jgvfilms/img/street-5-800.jpg 800w, /portfolio/jgvfilms/img/street-5.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="A girl singing in front of a graffiti wall" loading="lazy"></figure>
+        <figure class="print" data-to="2,30,5"><img src="/portfolio/jgvfilms/img/street-4.jpg" srcset="/portfolio/jgvfilms/img/street-4-800.jpg 800w, /portfolio/jgvfilms/img/street-4.jpg 1600w" sizes="(max-width: 600px) 45vw, 30vw" alt="Two men talking under a graffiti mural at night" loading="lazy"></figure>
       </div>
     </div>
   </section>
@@ -331,12 +355,12 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <section class="world" id="w-desert" data-name="Desert" data-motion="dawn to night">
     <div class="stage">
       <div class="frames">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-1.jpg" alt="An empty desert highway at first light" loading="lazy">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-2.jpg" alt="A couple embracing in the desert scrub" loading="lazy">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-3.jpg" alt="Running through Joshua trees at blue hour" loading="lazy">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-6.jpg" alt="Hands at a typewriter in amber light" loading="lazy">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-4.jpg" alt="Two figures embracing against a violet dusk" loading="lazy">
-        <img class="layer" src="/portfolio/jgvfilms/img/desert-5.jpg" alt="An embrace under a crescent moon" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-1.jpg" style="--x:45%" alt="An empty desert highway at first light" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-2.jpg" style="--x:52%" alt="A couple embracing in the desert scrub" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-3.jpg" style="--x:30%" alt="Running through Joshua trees at blue hour" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-6.jpg" style="--x:50%" alt="Hands at a typewriter in amber light" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-4.jpg" style="--x:45%" alt="Two figures embracing against a violet dusk" loading="lazy">
+        <img class="layer" src="/portfolio/jgvfilms/img/desert-5.jpg" style="--x:58%" alt="An embrace under a crescent moon" loading="lazy">
       </div>
       <div class="dusk"></div><div class="night"></div>
       <div class="world-head">
@@ -357,12 +381,12 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
       </div>
       <h2 class="title">After dark</h2>
       <div class="grid">
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-1.jpg" alt="Two people in a convertible under sodium light" loading="lazy"></div>
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-2.jpg" alt="A confrontation lit in magenta" loading="lazy"></div>
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-3.jpg" alt="A face in blue light, cigarette lit" loading="lazy"></div>
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-4.jpg" alt="A woman lit violet, hand to her mouth" loading="lazy"></div>
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-5.jpg" alt="Two men forehead to forehead at night" loading="lazy"></div>
-        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-6.jpg" alt="A woman in a car window, violet edge light" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-1.jpg" srcset="/portfolio/jgvfilms/img/neon-1-800.jpg 800w, /portfolio/jgvfilms/img/neon-1.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="Two people in a convertible under sodium light" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-2.jpg" srcset="/portfolio/jgvfilms/img/neon-2-800.jpg 800w, /portfolio/jgvfilms/img/neon-2.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="A confrontation lit in magenta" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-3.jpg" srcset="/portfolio/jgvfilms/img/neon-3-800.jpg 800w, /portfolio/jgvfilms/img/neon-3.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="A face in blue light, cigarette lit" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-4.jpg" srcset="/portfolio/jgvfilms/img/neon-4-800.jpg 800w, /portfolio/jgvfilms/img/neon-4.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="A woman lit violet, hand to her mouth" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-5.jpg" srcset="/portfolio/jgvfilms/img/neon-5-800.jpg 800w, /portfolio/jgvfilms/img/neon-5.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="Two men forehead to forehead at night" loading="lazy"></div>
+        <div class="cell"><img src="/portfolio/jgvfilms/img/neon-6.jpg" srcset="/portfolio/jgvfilms/img/neon-6-800.jpg 800w, /portfolio/jgvfilms/img/neon-6.jpg 1600w" sizes="(max-width: 640px) 50vw, 33vw" alt="A woman in a car window, violet edge light" loading="lazy"></div>
       </div>
     </div>
   </section>
@@ -375,13 +399,13 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
       <p>Dancers, wind, salt flats, open sky.</p>
     </div>
     <div class="sky">
-      <figure class="float" data-speed="0.9" style="left:4%;top:8%;width:38%"><img src="/portfolio/jgvfilms/img/air-2.jpg" alt="A dancer lifted overhead on a hilltop" loading="lazy"></figure>
-      <figure class="float" data-speed="0.4" style="left:58%;top:14%;width:34%"><img src="/portfolio/jgvfilms/img/air-3.jpg" alt="A man with arms open to the clouds" loading="lazy"></figure>
-      <figure class="float" data-speed="1.3" style="left:30%;top:36%;width:28%"><img src="/portfolio/jgvfilms/img/air-1.jpg" alt="A dancer underwater in teal light" loading="lazy"></figure>
-      <figure class="float" data-speed="0.6" style="left:66%;top:50%;width:30%"><img src="/portfolio/jgvfilms/img/air-5.jpg" alt="A dancer mid-kick on the salt flats" loading="lazy"></figure>
-      <figure class="float" data-speed="1.1" style="left:6%;top:60%;width:36%"><img src="/portfolio/jgvfilms/img/air-4.jpg" alt="A cloaked figure standing in the sea" loading="lazy"></figure>
-      <figure class="float" data-speed="0.5" style="left:44%;top:74%;width:40%"><img src="/portfolio/jgvfilms/img/air-6.jpg" alt="Two dancers pulling dark fabric between them" loading="lazy"></figure>
-      <figure class="float" data-speed="0.8" style="left:12%;top:86%;width:30%"><img src="/portfolio/jgvfilms/img/air-7.jpg" alt="Clouds reflected in still water" loading="lazy"></figure>
+      <figure class="float" data-speed="0.9" style="left:4%;top:8%;width:38%"><img src="/portfolio/jgvfilms/img/air-2.jpg" srcset="/portfolio/jgvfilms/img/air-2-800.jpg 800w, /portfolio/jgvfilms/img/air-2.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer lifted overhead on a hilltop" loading="lazy"></figure>
+      <figure class="float" data-speed="0.4" style="left:58%;top:14%;width:34%"><img src="/portfolio/jgvfilms/img/air-3.jpg" srcset="/portfolio/jgvfilms/img/air-3-800.jpg 800w, /portfolio/jgvfilms/img/air-3.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A man with arms open to the clouds" loading="lazy"></figure>
+      <figure class="float" data-speed="1.3" style="left:30%;top:36%;width:28%"><img src="/portfolio/jgvfilms/img/air-1.jpg" srcset="/portfolio/jgvfilms/img/air-1-800.jpg 800w, /portfolio/jgvfilms/img/air-1.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer underwater in teal light" loading="lazy"></figure>
+      <figure class="float" data-speed="0.6" style="left:66%;top:50%;width:30%"><img src="/portfolio/jgvfilms/img/air-5.jpg" srcset="/portfolio/jgvfilms/img/air-5-800.jpg 800w, /portfolio/jgvfilms/img/air-5.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A dancer mid-kick on the salt flats" loading="lazy"></figure>
+      <figure class="float" data-speed="1.1" style="left:6%;top:60%;width:36%"><img src="/portfolio/jgvfilms/img/air-4.jpg" srcset="/portfolio/jgvfilms/img/air-4-800.jpg 800w, /portfolio/jgvfilms/img/air-4.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="A cloaked figure standing in the sea" loading="lazy"></figure>
+      <figure class="float" data-speed="0.5" style="left:44%;top:74%;width:40%"><img src="/portfolio/jgvfilms/img/air-6.jpg" srcset="/portfolio/jgvfilms/img/air-6-800.jpg 800w, /portfolio/jgvfilms/img/air-6.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="Two dancers pulling dark fabric between them" loading="lazy"></figure>
+      <figure class="float" data-speed="0.8" style="left:12%;top:86%;width:30%"><img src="/portfolio/jgvfilms/img/air-7.jpg" srcset="/portfolio/jgvfilms/img/air-7-800.jpg 800w, /portfolio/jgvfilms/img/air-7.jpg 1600w" sizes="(max-width: 600px) 62vw, 40vw" alt="Clouds reflected in still water" loading="lazy"></figure>
     </div>
   </section>
 
@@ -389,12 +413,12 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <section class="world" id="w-faces" data-name="Faces" data-motion="focus pulls">
     <div class="stage">
       <div class="layers">
-        <img src="/portfolio/jgvfilms/img/faces-1.jpg" alt="Portrait in a white beanie against a violet studio wall" loading="lazy">
-        <img src="/portfolio/jgvfilms/img/faces-2.jpg" alt="Studio portrait under a softbox, pink cyc" loading="lazy">
-        <img src="/portfolio/jgvfilms/img/faces-3.jpg" alt="Two women in patterned hijabs, window light" loading="lazy">
-        <img src="/portfolio/jgvfilms/img/faces-4.jpg" alt="A woman with curly hair looking off camera" loading="lazy">
-        <img src="/portfolio/jgvfilms/img/faces-5.jpg" alt="Extreme close-up of eyes with dark makeup" loading="lazy">
-        <img src="/portfolio/jgvfilms/img/faces-6.jpg" alt="A face behind a translucent white veil" loading="lazy">
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-1-soft.jpg" alt="" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-1.jpg" alt="Portrait in a white beanie against a violet studio wall" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-2-soft.jpg" alt="" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-2.jpg" alt="Studio portrait under a softbox, pink cyc" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-3-soft.jpg" alt="" style="--x:30%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-3.jpg" alt="Two women in patterned hijabs, window light" loading="lazy" style="--x:30%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-4-soft.jpg" alt="" style="--x:45%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-4.jpg" alt="A woman with curly hair looking off camera" loading="lazy" style="--x:45%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-5-soft.jpg" alt="" style="--x:30%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-5.jpg" alt="Extreme close-up of eyes with dark makeup" loading="lazy" style="--x:30%"></div>
+        <div class="face"><img class="soft" src="/portfolio/jgvfilms/img/faces-6-soft.jpg" alt="" style="--x:55%"><img class="sharp" src="/portfolio/jgvfilms/img/faces-6.jpg" alt="A face behind a translucent white veil" loading="lazy" style="--x:55%"></div>
       </div>
       <div class="world-head">
         <span class="mono credit" style="color:#b9a6c9">Portraits · studio and location</span>
@@ -412,7 +436,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <section class="world" id="w-rosarito" data-name="ROSARITO" data-motion="red light rises">
     <div class="stage">
       <div class="glow"></div>
-      <img class="photo" src="/portfolio/jgvfilms/img/rosarito-1.jpg" alt="Garrett at a cliffside railing above the Pacific at dusk" loading="lazy">
+      <img class="photo" src="/portfolio/jgvfilms/img/rosarito-1.jpg" style="--x:42%" alt="Garrett at a cliffside railing above the Pacific at dusk" loading="lazy">
       <div class="inner">
         <span class="mono" style="color:rgba(237,230,218,.65)">In development · Feature · Writer</span>
         <h2 class="t"><span>ROSARITO</span></h2>
@@ -427,7 +451,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   <!-- 09 Close -->
   <section class="world" id="w-close" data-name="Cut" data-motion="iris closes">
     <div class="stage">
-      <div class="aperture"><img src="/portfolio/jgvfilms/img/close-1.jpg" alt="Portrait of J. Garrett Vorreuter" loading="lazy"></div>
+      <div class="aperture"><img src="/portfolio/jgvfilms/img/close-1.jpg" style="--x:50%" alt="Portrait of J. Garrett Vorreuter" loading="lazy"></div>
       <div class="end">
         <span class="mono credit">Buffalo, NY · Available for work</span>
         <h2 class="display">Let’s make<br>something.</h2>
@@ -453,7 +477,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   function embedUrl(url) {
     var t = String(url || "").trim();
     var yt = t.match(/(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/|youtube\.com\/(?:shorts|embed|live)\/)([\w-]{11})/);
-    if (yt) { var st = t.match(/[?&](?:t|start)=(\d+)/); return "https://www.youtube-nocookie.com/embed/" + yt[1] + (st ? "?start=" + st[1] : ""); }
+    if (yt) { var st = t.match(/[?&](?:t|start)=(\d+)/); return "https://www.youtube-nocookie.com/embed/" + yt[1] + "?playsinline=1" + (st ? "&start=" + st[1] : ""); }
     var vm = t.match(/vimeo\.com\/(?:channels\/[\w-]+\/|groups\/[\w-]+\/videos\/|video\/)?(\d+)(?:\/([\w]+))?/);
     if (vm) { var h = vm[2] || (t.match(/[?&]h=([\w]+)/) || [])[1]; return "https://player.vimeo.com/video/" + vm[1] + (h ? "?h=" + h : ""); }
     return null;
@@ -471,6 +495,7 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   if (reduce || !window.gsap || !window.ScrollTrigger) return; // static layout stays
   document.documentElement.classList.add("motion");
   gsap.registerPlugin(ScrollTrigger);
+  ScrollTrigger.config({ ignoreMobileResize: true });
 
   // Smooth scroll, driven by GSAP's ticker so pins and scrubs stay in lockstep.
   if (window.Lenis) {
@@ -552,12 +577,15 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
   });
 
   /* 07 Focus pulls: each portrait racks from soft to sharp as the ring turns */
-  var faces = gsap.utils.toArray("#w-faces .layers img");
+  var faces = gsap.utils.toArray("#w-faces .face");
   var marks = document.querySelector("#w-faces .marks");
   var facesTl = gsap.timeline({ scrollTrigger: pin("#w-faces .stage", "+=320%") });
   faces.forEach(function (im, i) {
+    // A pre-blurred copy sits under each still; fading the sharp one in reads as a focus pull
+    // without animating a CSS blur, which is expensive on iPhone.
     if (i) facesTl.fromTo(im, { opacity: 0 }, { opacity: 1, duration: 0.2 }, i);
-    facesTl.fromTo(im, { filter: "blur(14px)", scale: 1.05 }, { filter: "blur(0px)", scale: 1, duration: 0.6, ease: "power2.out" }, i);
+    facesTl.fromTo(im.querySelector(".sharp"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, i)
+      .fromTo(im, { scale: 1.05 }, { scale: 1, duration: 0.6, ease: "power2.out" }, i);
   });
   facesTl.fromTo(marks, { x: 0 }, { x: function () { return -(marks.scrollWidth - innerWidth / 2 - 46); }, ease: "none", duration: faces.length }, 0);
 
@@ -576,13 +604,12 @@ html.motion #w-close .draft-note { position: absolute; z-index: 2; left: 0; righ
 
   /* HUD: scroll is the playhead */
   var worlds = gsap.utils.toArray(".world");
-  var nameEl = document.getElementById("worldName"), motionEl = document.getElementById("motionName");
+  var nameEl = document.getElementById("worldName");
   var pad = function (n) { return String(n).padStart(2, "0"); };
   worlds.forEach(function (w, i) {
     ScrollTrigger.create({ trigger: w, start: "top 55%", end: "bottom 55%",
       onToggle: function (self) { if (!self.isActive) return;
-        nameEl.textContent = pad(i + 1) + " / " + pad(worlds.length) + " · " + w.dataset.name;
-        motionEl.textContent = "Motion: " + w.dataset.motion; } });
+        nameEl.textContent = pad(i + 1) + " / " + pad(worlds.length) + " · " + w.dataset.name; } });
   });
   var tc = document.getElementById("tc"), fill = document.getElementById("scrubFill"), scrub = document.getElementById("scrub");
   var RUNTIME = 9 * 60 * 24; // the page plays as a nine-minute reel at 24fps
