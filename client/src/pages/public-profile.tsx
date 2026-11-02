@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { Link, useParams } from "wouter";
 import { apiRequestJson, assetUrl } from "@/lib/queryClient";
 import { getVideoEmbedUrl } from "@/lib/video";
 import type { Profile, Credit } from "@shared/schema";
 import { LandingShell } from "./landing";
 import { normalizeProfileTheme } from "@/lib/profile-themes";
+import { parsePageConfig } from "@shared/page-config";
 
 // PRD-006: Public profile SEO — set meta tags dynamically
 function setProfileMeta(profile: Profile) {
@@ -163,90 +164,9 @@ export function PublicProfile() {
   }
   const filmCredits = Array.from(byTitle.values()).sort((a, b) => (b.year || 0) - (a.year || 0));
 
-  return (
-    <LandingShell theme={theme}>
-      <section className="hero" aria-labelledby="pp-name">
-        <div className="wrap pp-back">
-          <Link href="/crew" className="label pp-backlink" data-testid="button-back-crew">← Crew directory</Link>
-        </div>
-        <div className="wrap hero-grid pp-hero">
-          <div className="hero-copy">
-            <div className="pp-id">
-              {profile.avatarUrl
-                ? <img className="pp-avatar" src={assetUrl(profile.avatarUrl)} alt={profile.displayName} data-testid="img-profile-avatar" />
-                : <span className="pp-avatar" aria-hidden="true">{initials}</span>}
-              <div>
-                <p className="label">Crew profile / <b>thefvc.is/{handle}</b></p>
-                <p className="pp-role" data-testid="text-profile-role">{profile.role}</p>
-              </div>
-            </div>
-            <h1 id="pp-name" className="display pp-name" data-testid="text-profile-name">
-              {keepInitialsTogether(profile.displayName)}<span className="dot">.</span>
-            </h1>
-
-            {profile.bio && <p className="lede pp-bio" data-testid="text-profile-bio">{profile.bio}</p>}
-
-            {(place || profile.dayRate || profile.availability) && (
-              <dl className="facts pp-facts">
-                {place && <><dt>Based in</dt><dd>{place}</dd></>}
-                {profile.dayRate && <><dt>Day rate</dt><dd className="num">${profile.dayRate}/day</dd></>}
-                {profile.availability && (
-                  <><dt>Availability</dt><dd>
-                    <span className={`chip ${profile.availability === "available" ? "ok" : "wait"}`} data-testid="badge-availability">
-                      {AVAILABILITY_LABELS[profile.availability] || profile.availability}
-                    </span>
-                  </dd></>
-                )}
-              </dl>
-            )}
-
-            {(socials.length > 0 || (profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
-              <div className="cta-row">
-                {profile.reelUrl && !reelEmbeddable && (
-                  <a href={profile.reelUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" data-testid="link-reel">Watch reel</a>
-                )}
-                {profile.imdbUrl && (
-                  <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-imdb">IMDb</a>
-                )}
-                {profile.websiteUrl && (
-                  <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-website">Website</a>
-                )}
-                {socials.map(([platform, url]) => (
-                  <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid={`link-social-${platform}`}>
-                    {SOCIAL_LABELS[platform] || platform}
-                  </a>
-                ))}
-              </div>
-            )}
-
-            {skills.length > 0 && (
-              <div className="pp-skills">
-                <p className="label">Skills &amp; equipment</p>
-                <div className="tags">{skills.map((s) => <span key={s}>{s}</span>)}</div>
-              </div>
-            )}
-          </div>
-
-          <div className="hero-media">
-            <figure className="plate">
-              <span className="crop tl" aria-hidden="true" />
-              <span className="crop tr" aria-hidden="true" />
-              <span className="crop bl" aria-hidden="true" />
-              <span className="crop br" aria-hidden="true" />
-              {profile.coverUrl
-                ? <img className="photo" src={assetUrl(profile.coverUrl)} alt="" data-testid="img-cover" />
-                : <div className="photo pp-cover-blank" aria-hidden="true">{initials}</div>}
-              <div className="plate-overlay" aria-hidden="true">
-                <div className="plate-folio"><span>THEFVC<b>/</b>IS</span><span>{profile.role}</span></div>
-                {place && <span className="plate-side">{place}</span>}
-                <span className="plate-fig">@{handle}</span>
-              </div>
-            </figure>
-          </div>
-        </div>
-      </section>
-
-      {reels.length > 0 && (
+  const config = parsePageConfig(profile.pageConfig);
+  const sectionNodes: Record<string, React.ReactNode> = {
+    work: reels.length > 0 && (
         <section className="band" aria-labelledby="pp-reels">
           <div className="wrap">
             <div className="sec-head">
@@ -273,9 +193,8 @@ export function PublicProfile() {
             </div>
           </div>
         </section>
-      )}
-
-      {(filmCredits.length > 0 || credits.length > 0) && (
+      ),
+    filmography: (filmCredits.length > 0 || credits.length > 0) && (
         <section className="band" aria-labelledby="pp-credits">
           <div className="wrap">
             <div className="sec-head">
@@ -325,7 +244,99 @@ export function PublicProfile() {
             </div>
           </div>
         </section>
-      )}
+      ),
+  };
+
+  return (
+    <LandingShell theme={theme}>
+      <section className="hero" aria-labelledby="pp-name">
+        <div className="wrap pp-back">
+          <Link href="/crew" className="label pp-backlink" data-testid="button-back-crew">← Crew directory</Link>
+        </div>
+        <div className="wrap hero-grid pp-hero">
+          <div className="hero-copy">
+            <div className="pp-id">
+              {profile.avatarUrl
+                ? <img className="pp-avatar" src={assetUrl(profile.avatarUrl)} alt={profile.displayName} data-testid="img-profile-avatar" />
+                : <span className="pp-avatar" aria-hidden="true">{initials}</span>}
+              <div>
+                <p className="label">Crew profile / <b>thefvc.is/{handle}</b></p>
+                <p className="pp-role" data-testid="text-profile-role">{profile.role}</p>
+              </div>
+            </div>
+            <h1 id="pp-name" className="display pp-name" data-testid="text-profile-name">
+              {keepInitialsTogether(profile.displayName)}<span className="dot">.</span>
+            </h1>
+
+            {config.headline && <p className="label pp-headline" data-testid="text-profile-headline">{config.headline}</p>}
+            {profile.bio && <p className="lede pp-bio" data-testid="text-profile-bio">{profile.bio}</p>}
+
+            {(place || profile.dayRate || profile.availability) && (
+              <dl className="facts pp-facts">
+                {place && <><dt>Based in</dt><dd>{place}</dd></>}
+                {profile.dayRate && <><dt>Day rate</dt><dd className="num">${profile.dayRate}/day</dd></>}
+                {profile.availability && (
+                  <><dt>Availability</dt><dd>
+                    <span className={`chip ${profile.availability === "available" ? "ok" : "wait"}`} data-testid="badge-availability">
+                      {AVAILABILITY_LABELS[profile.availability] || profile.availability}
+                    </span>
+                  </dd></>
+                )}
+              </dl>
+            )}
+
+            {(socials.length > 0 || config.customLinks.length > 0 || (profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
+              <div className="cta-row">
+                {profile.reelUrl && !reelEmbeddable && (
+                  <a href={profile.reelUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" data-testid="link-reel">Watch reel</a>
+                )}
+                {profile.imdbUrl && (
+                  <a href={profile.imdbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-imdb">IMDb</a>
+                )}
+                {profile.websiteUrl && (
+                  <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="link-website">Website</a>
+                )}
+                {config.customLinks.map((l, i) => (
+                  <a key={`${l.url}-${i}`} href={l.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid={`link-custom-${i}`}>{l.label}</a>
+                ))}
+                {socials.map(([platform, url]) => (
+                  <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid={`link-social-${platform}`}>
+                    {SOCIAL_LABELS[platform] || platform}
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {skills.length > 0 && (
+              <div className="pp-skills">
+                <p className="label">Skills &amp; equipment</p>
+                <div className="tags">{skills.map((s) => <span key={s}>{s}</span>)}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="hero-media">
+            <figure className="plate">
+              <span className="crop tl" aria-hidden="true" />
+              <span className="crop tr" aria-hidden="true" />
+              <span className="crop bl" aria-hidden="true" />
+              <span className="crop br" aria-hidden="true" />
+              {profile.coverUrl
+                ? <img className="photo" src={assetUrl(profile.coverUrl)} alt="" data-testid="img-cover" />
+                : <div className="photo pp-cover-blank" aria-hidden="true">{initials}</div>}
+              <div className="plate-overlay" aria-hidden="true">
+                <div className="plate-folio"><span>THEFVC<b>/</b>IS</span><span>{profile.role}</span></div>
+                {place && <span className="plate-side">{place}</span>}
+                <span className="plate-fig">@{handle}</span>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      {config.sections.filter((sec) => sec.visible).map((sec) => (
+        <Fragment key={sec.id}>{sectionNodes[sec.id]}</Fragment>
+      ))}
     </LandingShell>
   );
 }

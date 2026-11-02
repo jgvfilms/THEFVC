@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { PageLayoutEditor } from "@/components/page-layout-editor";
+import { parsePageConfigDraft } from "@shared/page-config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, apiRequestJson, assetUrl, getAuthToken } from "@/lib/queryClient";
@@ -193,6 +195,14 @@ export function ProfileEdit() {
     data.skills = skillsValue;
     if (videoLinks.length > 0) data.videoLinks = JSON.stringify(videoLinks);
     if (Object.keys(socialLinks).length > 0) data.socialLinks = JSON.stringify(socialLinks);
+    if (typeof data.pageConfig === "string") {
+      // Drop half-filled link rows so an unfinished "Add link" can't fail the whole save.
+      const edited = JSON.parse(data.pageConfig as string);
+      data.pageConfig = JSON.stringify({
+        ...edited,
+        customLinks: (edited.customLinks ?? []).filter((l: { label: string; url: string }) => l.label.trim() && l.url.trim() && l.url !== "https://"),
+      });
+    }
     updateMutation.mutate(data as Partial<Profile>);
   };
 
@@ -502,6 +512,19 @@ export function ProfileEdit() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Page layout */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Page Layout</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PageLayoutEditor
+            value={parsePageConfigDraft(current.pageConfig)}
+            onChange={(next) => set("pageConfig", JSON.stringify(next))}
+          />
         </CardContent>
       </Card>
 

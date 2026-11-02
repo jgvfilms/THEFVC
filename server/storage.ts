@@ -7,6 +7,7 @@ import {
   notifications,
   subscriptionTiers, payments, w9Forms,
   invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
+  mcpTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -33,6 +34,7 @@ import type {
   InvoiceLineItem, InsertInvoiceLineItem,
   InvoiceReminder, InsertInvoiceReminder,
   InvoiceEvent, InsertInvoiceEvent,
+  McpToken, InsertMcpToken,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, and, or, desc, asc, sql, gte, lte, lt, inArray, getTableColumns } from "drizzle-orm";
@@ -74,6 +76,13 @@ export interface IStorage {
   addCrewMember(crew: InsertProductionCrew): ProductionCrew;
   updateCrewMember(id: number, data: Partial<InsertProductionCrew>): ProductionCrew | undefined;
   removeCrewMember(id: number): void;
+
+  // MCP access tokens
+  createMcpToken(data: InsertMcpToken): McpToken;
+  getMcpTokenByHash(tokenHash: string): McpToken | undefined;
+  listMcpTokens(userId: number): McpToken[];
+  revokeMcpToken(id: number, userId: number): boolean;
+  touchMcpToken(id: number): void;
 
   // Credits
   getCreditsByProfile(profileId: number): Credit[];
@@ -379,6 +388,30 @@ export class DatabaseStorage implements IStorage {
 
   removeCrewMember(id: number): void {
     db.delete(productionCrew).where(eq(productionCrew.id, id)).run();
+  }
+
+  // ===== MCP ACCESS TOKENS =====
+  createMcpToken(data: InsertMcpToken): McpToken {
+    return db.insert(mcpTokens).values(data).returning().get();
+  }
+
+  getMcpTokenByHash(tokenHash: string): McpToken | undefined {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.tokenHash, tokenHash)).get();
+  }
+
+  listMcpTokens(userId: number): McpToken[] {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.userId, userId)).orderBy(desc(mcpTokens.createdAt)).all();
+  }
+
+  // Scoped by userId so one member can never revoke another's token by id.
+  revokeMcpToken(id: number, userId: number): boolean {
+    const res = db.update(mcpTokens).set({ revokedAt: new Date() })
+      .where(and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId), sql`${mcpTokens.revokedAt} IS NULL`)).run();
+    return res.changes > 0;
+  }
+
+  touchMcpToken(id: number): void {
+    db.update(mcpTokens).set({ lastUsedAt: new Date() }).where(eq(mcpTokens.id, id)).run();
   }
 
   // ===== CREDITS =====

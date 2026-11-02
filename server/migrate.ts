@@ -25,6 +25,7 @@ const PROFILE_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "cover_url", def: "TEXT" },
   { name: "theme_preset", def: "TEXT DEFAULT 'cinema_gold'" },
   { name: "accent_color", def: "TEXT" },
+  { name: "page_config", def: "TEXT" },
   { name: "video_links", def: "TEXT DEFAULT '[]'" },
   { name: "social_links", def: "TEXT DEFAULT '{}'" },
   { name: "imdb_credits", def: "TEXT DEFAULT '[]'" },
@@ -54,6 +55,18 @@ const PRODUCTION_COLUMNS: Array<{ name: string; def: string }> = [
 ];
 
 const NEW_TABLES = [
+  `CREATE TABLE IF NOT EXISTS mcp_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    token_prefix TEXT NOT NULL,
+    scopes TEXT NOT NULL DEFAULT '[]',
+    last_used_at INTEGER,
+    expires_at INTEGER,
+    revoked_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS beta_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,
@@ -319,6 +332,7 @@ const NEW_TABLES = [
 ];
 
 const INDEXES = [
+  `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_recipient ON invoices(recipient_user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices(due_date)`,

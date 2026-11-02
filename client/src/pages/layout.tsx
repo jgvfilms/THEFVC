@@ -17,6 +17,7 @@ import {
   Shield,
   Receipt,
   FileText,
+  Plug,
 } from "lucide-react";
 import NotFound from "./not-found";
 
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { path: "/app/productions", label: "Productions", icon: Clapperboard },
   { path: "/crew", label: "Crew Finder", icon: Users },
   { path: "/app/payments", label: "Billing", icon: FileText },
+  { path: "/app/connections", label: "AI Connections", icon: Plug },
 ];
 
 function SidebarLink({ path, label, icon: Icon }: { path: string; label: string; icon: typeof User }) {

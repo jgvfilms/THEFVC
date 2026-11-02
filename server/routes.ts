@@ -26,6 +26,9 @@ import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, str
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
+import { registerMcpRoutes } from "./mcp-routes";
+import { pageConfigSchema } from "@shared/page-config";
+import { profileUpdateSchema, videoUrls } from "./lib/profile-update";
 import {
   isGoogleOAuthConfigured,
   buildGoogleAuthUrl,
@@ -135,6 +138,8 @@ export async function registerRoutes(
 
   // Invoicing (admin CRUD + member read-only)
   registerInvoiceRoutes(app);
+  // MCP endpoint + personal access tokens for members' own AI clients
+  registerMcpRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —
   // not payments, browsing, or anything else on the API. blockDurationMs is
@@ -513,25 +518,33 @@ export async function registerRoutes(
   });
 
   app.patch("/api/profile", requireAuth, async (req: AuthedRequest, res: Response) => {
+    // Allowlist, not pass-through: a member must not be able to set their own
+    // subscription tier, Stripe ids or userId by adding keys to this body.
+    const parsed = profileUpdateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid profile data", details: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })) });
+    }
+    const patch = parsed.data;
+    // pageConfig renders on a public page, so it gets the stricter schema too.
+    if (patch.pageConfig != null) {
+      let ok = false;
+      try { ok = pageConfigSchema.safeParse(JSON.parse(patch.pageConfig)).success; } catch { /* invalid JSON */ }
+      if (!ok) return res.status(400).json({ error: "Invalid pageConfig" });
+    }
+
     // Fetch existing profile to compare media links
     const existing = storage.getProfile(req.userId!);
 
-    const updated = storage.updateProfile(req.userId!, req.body);
+    const updated = storage.updateProfile(req.userId!, patch);
     if (!updated) {
       return res.status(404).json({ error: "Profile not found" });
     }
 
     // Detect newly added video links
     if (existing && updated.videoLinks) {
-      const oldVideos: string[] = existing.videoLinks ? (() => {
-        try { return JSON.parse(existing.videoLinks as string); } catch { return []; }
-      })() : [];
-      const newVideos: string[] = (() => {
-        try { return JSON.parse(updated.videoLinks as string); } catch { return []; }
-      })();
-      const oldSet = new Set(oldVideos.map((u: string) => u.toLowerCase().trim()));
-      for (const url of newVideos) {
-        if (url && !oldSet.has(url.toLowerCase().trim())) {
+      const oldSet = new Set(videoUrls(existing.videoLinks).map((u) => u.toLowerCase().trim()));
+      for (const url of videoUrls(updated.videoLinks)) {
+        if (!oldSet.has(url.toLowerCase().trim())) {
           const platform = url.includes('youtube') || url.includes('youtu.be') ? 'YouTube'
             : url.includes('vimeo') ? 'Vimeo' : 'Video';
           storage.createActivity({

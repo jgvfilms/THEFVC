@@ -69,6 +69,7 @@ export const profiles = sqliteTable("profiles", {
   coverUrl: text("cover_url"),
   themePreset: text("theme_preset").default("cinema_gold"),
   accentColor: text("accent_color"),
+  pageConfig: text("page_config"), // JSON, validated by server/lib/page-config.ts
   videoLinks: text("video_links").default("[]"), // JSON array of {provider, url, title}
   socialLinks: text("social_links").default("{}"), // JSON object of platform -> url
   imdbCredits: text("imdb_credits").default("[]"), // JSON array of {title, year, role, rating}
@@ -103,6 +104,7 @@ export const insertProfileSchema = createInsertSchema(profiles).pick({
   coverUrl: true,
   themePreset: true,
   accentColor: true,
+  pageConfig: true,
   videoLinks: true,
   socialLinks: true,
   dayRate: true,
@@ -600,3 +602,23 @@ export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
 
 export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
 export type InsertStripeWebhookEvent = typeof stripeWebhookEvents.$inferInsert;
+
+// ===== MCP ACCESS TOKENS =====
+// Personal access tokens that let a member's own AI client (Claude Desktop,
+// Claude Code, ...) call the /mcp endpoint as them. Only a SHA-256 of the
+// token is stored; the plaintext is shown once at creation.
+export const mcpTokens = sqliteTable("mcp_tokens", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  tokenPrefix: text("token_prefix").notNull(), // first chars, so the UI can tell tokens apart
+  scopes: text("scopes").notNull().default("[]"), // JSON array of McpScope
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type McpToken = typeof mcpTokens.$inferSelect;
+export type InsertMcpToken = typeof mcpTokens.$inferInsert;
