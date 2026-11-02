@@ -244,7 +244,7 @@ async function routeStripeEvent(event: Stripe.Event): Promise<void> {
           // Create a payment record for the subscription
           storage.createPayment({
             userId: parseInt(userId),
-            amount: Math.round((session.amount_total || 0) / 100), // Convert cents to dollars
+            amount: session.amount_total || 0, // Stripe already reports integer cents; the column is cents
             currency: session.currency || "usd",
             status: "succeeded",
             stripeChargeId: session.payment_intent ? (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent.id) : null,

@@ -11,7 +11,7 @@ interface TabItem {
 const tabs: TabItem[] = [
   {
     name: "dashboard",
-    path: "/dashboard",
+    path: "/app",
     label: "Home",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -22,7 +22,7 @@ const tabs: TabItem[] = [
   },
   {
     name: "productions",
-    path: "/productions",
+    path: "/app/productions",
     label: "Productions",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -33,7 +33,7 @@ const tabs: TabItem[] = [
   },
   {
     name: "crew",
-    path: "/crew-finder",
+    path: "/crew",
     label: "Crew Finder",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -44,7 +44,7 @@ const tabs: TabItem[] = [
   },
   {
     name: "profile",
-    path: "/profile",
+    path: "/app/profile",
     label: "Profile",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -55,12 +55,23 @@ const tabs: TabItem[] = [
   },
   {
     name: "payments",
-    path: "/payments",
+    path: "/app/payments",
     label: "Payments",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M3 10h4l3-3 4 4 7-7v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10z" />
+      </svg>
+    ),
+  },
+  {
+    name: "connections",
+    path: "/app/connections",
+    label: "AI",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 01-4 4h-4a4 4 0 01-4-4V8z" />
       </svg>
     ),
   },
@@ -75,9 +86,8 @@ export function BottomTabBar() {
   const [location, setLocation] = useLocation();
 
   const isActive = (path: string) => {
-    if (path === "/dashboard") {
-      return location === "/" || location === "/dashboard" || location.startsWith("/dashboard");
-    }
+    // "/app" prefixes every other tab, so Home must match exactly.
+    if (path === "/app") return location === "/app";
     return location.startsWith(path);
   };
 
@@ -100,6 +110,7 @@ export function BottomTabBar() {
                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
                        }`}
             aria-label={tab.label}
+            data-testid={`tab-${tab.name}`}
           >
             <div className="mb-0.5">{tab.icon}</div>
             <span className="text-xs font-medium">{tab.label}</span>
