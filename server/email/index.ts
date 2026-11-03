@@ -5,4 +5,5 @@ export {
   welcomeTemplate,
   betaInviteTemplate,
   invoiceReminderTemplate,
+  newMessageTemplate,
 } from "./templates";

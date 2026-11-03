@@ -44,6 +44,7 @@ const USER_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "activated_at", def: "INTEGER" },
   { name: "last_login_at", def: "INTEGER" },
   { name: "google_id", def: "TEXT" },
+  { name: "email_on_message", def: "INTEGER DEFAULT 1" },
 ];
 
 const BLOCKED_IPS_COLUMNS: Array<{ name: string; def: string }> = [
@@ -246,6 +247,14 @@ const NEW_TABLES = [
     is_read INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL REFERENCES users(id),
+    recipient_id INTEGER NOT NULL REFERENCES users(id),
+    body TEXT NOT NULL,
+    read_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
   // ===== PRD-007: Payments & Monetization =====
   `CREATE TABLE IF NOT EXISTS subscription_tiers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,6 +371,8 @@ const NEW_TABLES = [
 ];
 
 const INDEXES = [
+  `CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, read_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, recipient_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_recipient ON invoices(recipient_user_id)`,

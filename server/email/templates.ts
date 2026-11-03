@@ -281,3 +281,17 @@ and ${contact} will sort it out.
 — The Film Video Collective`,
   };
 }
+
+/**
+ * "You have a new message" notice. Deliberately carries no message text: email
+ * is stored and forwarded, so the body stays inside the app behind a login.
+ * Context: { recipientName, senderName, inboxUrl }
+ */
+export function newMessageTemplate(ctx: TemplateContext): { subject: string; html: string; text: string } {
+  const { recipientName, senderName, inboxUrl } = ctx;
+  const first = String(recipientName || "there").split(" ")[0];
+  const subject = `${senderName} sent you a message on THE FVC`;
+  const text = `Hi ${first},\n\n${senderName} sent you a message on THE FVC. Read and reply here:\n${inboxUrl}\n\nYou can turn these emails off in your settings.`;
+  const html = `<p>Hi ${esc(first)},</p><p><b>${esc(senderName)}</b> sent you a message on THE FVC.</p><p><a href="${esc(inboxUrl)}">Read and reply</a></p><p style="color:#777;font-size:12px">You can turn these emails off in your settings.</p>`;
+  return { subject, html, text };
+}

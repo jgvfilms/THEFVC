@@ -12,6 +12,8 @@ export const users = sqliteTable("users", {
   // to Google sign-in; those rows still carry an unguessable random
   // password_hash so the password path can never authenticate them.
   googleId: text("google_id"),
+  // Member can turn off the "you have a new message" email; in-app still shows it.
+  emailOnMessage: integer("email_on_message", { mode: "boolean" }).default(true),
   isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
   accessStatus: text("access_status").default("active"), // pending | active | revoked
   invitedBy: integer("invited_by"),
@@ -668,3 +670,18 @@ export type OAuthClientRow = typeof oauthClients.$inferSelect;
 export type OAuthPendingRow = typeof oauthPending.$inferSelect;
 export type OAuthCodeRow = typeof oauthCodes.$inferSelect;
 export type OAuthRefreshRow = typeof oauthRefreshTokens.$inferSelect;
+
+// ===== MEMBER MESSAGES =====
+// One row per message; a "conversation" is just the pair of members, so there is
+// no thread table to keep in sync.
+export const messages = sqliteTable("messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  senderId: integer("sender_id").notNull().references(() => users.id),
+  recipientId: integer("recipient_id").notNull().references(() => users.id),
+  body: text("body").notNull(),
+  readAt: integer("read_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = typeof messages.$inferInsert;
