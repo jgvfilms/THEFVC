@@ -285,6 +285,10 @@ export function PublicProfile() {
               </dl>
             )}
 
+            <div className="cta-row">
+              <a href={`#/app/messages/${handle}`} className="btn btn-primary" data-testid="link-message-member">Message</a>
+            </div>
+
             {(socials.length > 0 || config.customLinks.length > 0 || (profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (
               <div className="cta-row">
                 {profile.reelUrl && !reelEmbeddable && (

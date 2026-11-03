@@ -10,7 +10,8 @@ export interface Notification {
   userId: number;
   type: string;
   title: string;
-  message: string;
+  message: string | null;
+  linkUrl?: string | null;
   isRead: boolean;
   metadata?: any;
   createdAt: string;

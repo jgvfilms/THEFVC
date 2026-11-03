@@ -18,6 +18,7 @@ import {
   Receipt,
   FileText,
   Plug,
+  MessageSquare,
 } from "lucide-react";
 import NotFound from "./not-found";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { path: "/app/productions", label: "Productions", icon: Clapperboard },
   { path: "/crew", label: "Crew Finder", icon: Users },
   { path: "/app/payments", label: "Billing", icon: FileText },
+  { path: "/app/messages", label: "Messages", icon: MessageSquare },
   { path: "/app/connections", label: "AI Connections", icon: Plug },
 ];
 

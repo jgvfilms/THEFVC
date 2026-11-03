@@ -17,6 +17,7 @@ import { DashboardLayout } from "./pages/layout";
 import { DashboardHome } from "./pages/dashboard-home";
 import { ProfileEdit } from "./pages/profile-edit";
 import { ConnectionsPage } from "./pages/connections";
+import { MessagesPage } from "./pages/messages";
 import { PublicProfile } from "./pages/public-profile";
 import { CrewFinder } from "./pages/crew-finder";
 import { PaymentsPage } from "./pages/payments";
@@ -73,6 +74,8 @@ export function AppRouter() {
       <Route path="/app">{() => <DashboardPage><DashboardHome /></DashboardPage>}</Route>
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
       <Route path="/app/oauth/consent/:id">{() => <ProtectedRoute><OAuthConsentPage /></ProtectedRoute>}</Route>
+      <Route path="/app/messages/:handle">{() => <DashboardPage><MessagesPage /></DashboardPage>}</Route>
+      <Route path="/app/messages">{() => <DashboardPage><MessagesPage /></DashboardPage>}</Route>
       <Route path="/app/connections">{() => <DashboardPage><ConnectionsPage /></DashboardPage>}</Route>
       <Route path="/app/productions/:id">{() => <DashboardPage><ProductionDetail /></DashboardPage>}</Route>
       <Route path="/app/productions">{() => <DashboardPage><ProductionsList /></DashboardPage>}</Route>

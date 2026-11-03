@@ -157,8 +157,9 @@ export function NotificationsBell() {
                              ${n.isRead ? "bg-gray-50 dark:bg-gray-800/50" : "bg-blue-50 dark:bg-blue-900/20"}
                              hover:bg-gray-100 dark:hover:bg-gray-700`}
                   onClick={() => {
-                    if (!n.isRead) {
-                      // Mark as read on click
+                    if (n.linkUrl) {
+                      setOpen(false);
+                      window.location.hash = `#${n.linkUrl}`;
                     }
                   }}
                 >

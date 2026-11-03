@@ -65,6 +65,17 @@ const tabs: TabItem[] = [
     ),
   },
   {
+    name: "messages",
+    path: "/app/messages",
+    label: "Messages",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M8 10h8M8 14h5M21 12c0 4.4-4 8-9 8a10 10 0 01-3.5-.6L3 21l1.6-4.2A7.7 7.7 0 013 12c0-4.4 4-8 9-8s9 3.6 9 8z" />
+      </svg>
+    ),
+  },
+  {
     name: "connections",
     path: "/app/connections",
     label: "AI",
