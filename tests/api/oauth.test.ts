@@ -259,3 +259,52 @@ describe("refresh and revocation", () => {
     expect(JSON.stringify(log)).toContain("mcp_oauth_grant");
   });
 });
+
+describe("Connections list", () => {
+  const list = async (session: string) =>
+    (await (await fetch(`${baseUrl}/api/mcp/tokens`, { headers: asMember(session) })).json()) as Array<{ kind: string; id: number; name: string; scopes: string[] }>;
+
+  it("shows one row per connected app, however many times it has refreshed", async () => {
+    const { session } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    let tokens = await (await exchange(tokenParams(client, code, verifier))).json();
+    for (let i = 0; i < 3; i++) {
+      tokens = await (await exchange({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: client.client_id })).json();
+    }
+    const rows = await list(session);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "app", name: "Test AI" });
+    expect(rows[0].scopes.sort()).toEqual(["credits:read", "credits:write", "profile:read"]);
+  });
+
+  it("keeps listing the app after its hourly access token expires, and Disconnect still ends it", async () => {
+    const { session, user } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    const tokens = await (await exchange(tokenParams(client, code, verifier))).json();
+    db.run(`UPDATE mcp_tokens SET expires_at = ${Math.floor(Date.now() / 1000) - 60} WHERE user_id = ${user.id}`);
+
+    const [app] = await list(session);
+    expect(app.kind).toBe("app");
+    expect((await fetch(`${baseUrl}/api/mcp/tokens/${app.id}`, { method: "DELETE", headers: asMember(session) })).ok).toBe(true);
+    expect(await list(session)).toHaveLength(0);
+    const refreshed = await exchange({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: client.client_id });
+    expect(refreshed.status).toBe(400);
+  });
+
+  it("doesn't count connected apps against the personal-token limit", async () => {
+    const { session, user } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    await exchange(tokenParams(client, code, verifier));
+    // Simulate many hourly rotations having left expired access-token rows behind.
+    for (let i = 0; i < 12; i++) {
+      db.run(`INSERT INTO mcp_tokens (user_id, name, token_hash, token_prefix, scopes, expires_at, created_at)
+              VALUES (${user.id}, 'OAuth: Test AI', 'stale-${i}', 'fvc_mcp_', '[]', ${Math.floor(Date.now() / 1000) - 3600}, ${Math.floor(Date.now() / 1000)})`);
+    }
+    const res = await fetch(`${baseUrl}/api/mcp/tokens`, {
+      method: "POST", headers: asMember(session), body: JSON.stringify({ name: "mine", scopes: ["profile:read"] }),
+    });
+    expect(res.status).toBe(201);
+    expect((await list(session)).map((r) => r.kind).sort()).toEqual(["app", "token"]);
+  });
+});
+

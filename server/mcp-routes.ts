@@ -65,8 +65,12 @@ const pageUpdateShape = {
   customLinks: pageConfigSchema.shape.customLinks.optional(),
 };
 
+// OAuth access tokens are named "OAuth: <client>" (see lib/oauth-provider.ts).
+const isOAuthToken = (t: McpToken) => t.name.startsWith("OAuth: ");
+
 function tokenView(t: McpToken) {
   return {
+    kind: "token" as const,
     id: t.id,
     name: t.name,
     tokenPrefix: t.tokenPrefix,
@@ -262,14 +266,29 @@ const rpcError = (res: Response, status: number, message: string) =>
 
 export function registerMcpRoutes(app: Express): void {
   // ----- Token management: session auth only, so a token can't mint tokens -----
+  // What the member sees: their personal tokens, plus one row per connected
+  // app. An app is its live refresh grant, not its hourly access tokens, so
+  // the list doesn't fill with expired rows and revoking the row shown ends the
+  // whole grant (the refresh path refuses once that access token is revoked).
   app.get("/api/mcp/tokens", requireAuth, (req: AuthedRequest, res: Response) => {
-    res.json(storage.listMcpTokens(req.userId!).map(tokenView));
+    const now = new Date();
+    const personal = storage.listMcpTokens(req.userId!)
+      .filter((t) => !isOAuthToken(t) && !t.revokedAt && !(t.expiresAt && t.expiresAt < now))
+      .map(tokenView);
+    const apps = storage.listLiveOAuthGrants(req.userId!).flatMap((g) => {
+      const t = storage.getMcpToken(g.accessTokenId);
+      if (!t || t.revokedAt) return [];
+      return [{ ...tokenView(t), kind: "app" as const, name: t.name.replace(/^OAuth: /, ""), scopes: parseScopes(g.scopes), expiresAt: g.expiresAt }];
+    });
+    res.json([...apps, ...personal]);
   });
 
   app.post("/api/mcp/tokens", requireAuth, (req: AuthedRequest, res: Response) => {
     const parsed = createTokenSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
-    const live = storage.listMcpTokens(req.userId!).filter((t) => !t.revokedAt);
+    // Only personal tokens count: connected apps mint a fresh access token every
+    // hour and would otherwise exhaust the limit.
+    const live = storage.listMcpTokens(req.userId!).filter((t) => !isOAuthToken(t) && !t.revokedAt && !(t.expiresAt && t.expiresAt < new Date()));
     if (live.length >= MAX_TOKENS_PER_USER) {
       return res.status(409).json({ error: `Token limit reached (${MAX_TOKENS_PER_USER}). Revoke one first.` });
     }

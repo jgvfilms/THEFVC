@@ -96,6 +96,7 @@ export interface IStorage {
   createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void;
   consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
   revokeOAuthRefresh(tokenHash: string): void;
+  listLiveOAuthGrants(userId: number): OAuthRefreshRow[];
   purgeExpiredOAuth(): void;
 
   // Credits
@@ -485,6 +486,12 @@ export class DatabaseStorage implements IStorage {
 
   revokeOAuthRefresh(tokenHash: string): void {
     db.update(oauthRefreshTokens).set({ revokedAt: new Date() }).where(eq(oauthRefreshTokens.tokenHash, tokenHash)).run();
+  }
+
+  listLiveOAuthGrants(userId: number): OAuthRefreshRow[] {
+    return db.select().from(oauthRefreshTokens)
+      .where(and(eq(oauthRefreshTokens.userId, userId), sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
+      .orderBy(desc(oauthRefreshTokens.expiresAt)).all();
   }
 
   purgeExpiredOAuth(): void {

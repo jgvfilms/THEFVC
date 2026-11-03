@@ -13,6 +13,7 @@ import { Copy, KeyRound, Trash2 } from "lucide-react";
 export type Scope = "profile:read" | "profile:write" | "credits:read" | "credits:write" | "page:write";
 
 interface McpTokenView {
+  kind: "token" | "app";
   id: number;
   name: string;
   tokenPrefix: string;
@@ -77,28 +78,68 @@ export function ConnectionsPage() {
   const toggleScope = (s: Scope, on: boolean) => setScopes((prev) => (on ? [...prev, s] : prev.filter((x) => x !== s)));
   const copy = (text: string, what: string) =>
     navigator.clipboard.writeText(text).then(() => toast({ title: `${what} copied` }));
-  const live = tokens.filter((t) => !t.revokedAt);
+  const apps = tokens.filter((t) => t.kind === "app");
+  const personal = tokens.filter((t) => t.kind === "token");
 
   return (
     <div className="max-w-2xl space-y-6" data-testid="page-connections">
       <div>
         <h1 className="text-2xl font-semibold">AI connections</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Let your own AI assistant read and update your FVC profile and page. Each connection uses a token you can limit and revoke at any time.
+          Let your own AI assistant read and update your FVC profile and page. You choose what it can do, and you can disconnect it at any time.
         </p>
       </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Connect an assistant</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Add this server URL to your assistant, with the token below as a bearer token.</p>
+        <CardContent className="space-y-4">
           <div className="flex gap-2">
             <Input readOnly value={mcpUrl} data-testid="input-mcp-url" />
             <Button type="button" variant="outline" size="icon" aria-label="Copy URL" onClick={() => copy(mcpUrl, "URL")} data-testid="button-copy-url">
               <Copy className="h-4 w-4" />
             </Button>
           </div>
-          <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto" data-testid="text-claude-code-snippet">{`claude mcp add --transport http thefvc ${mcpUrl} \\\n  --header "Authorization: Bearer <your token>"`}</pre>
+          <div className="space-y-1" data-testid="text-connect-claude">
+            <p className="text-sm font-medium">Claude (claude.ai or the desktop app)</p>
+            <p className="text-sm text-muted-foreground">
+              Go to Settings → Connectors → Add custom connector, paste the URL above, and click Connect. You'll be sent back here to choose
+              what Claude may do. No token needed. It shows up below as a connected app.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Other tools (Claude Code and similar)</p>
+            <p className="text-sm text-muted-foreground">Create a personal token below and pass it as a bearer token.</p>
+            <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto" data-testid="text-claude-code-snippet">{`claude mcp add --transport http thefvc ${mcpUrl} \\\n  --header "Authorization: Bearer <your token>"`}</pre>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Connected apps</CardTitle></CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : apps.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="text-no-apps">No apps connected.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {apps.map((t) => (
+                <li key={t.id} className="py-3 flex items-start gap-3" data-testid={`app-${t.id}`}>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-medium">{t.name}</p>
+                    <div className="flex flex-wrap gap-1">{t.scopes.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {t.lastUsedAt ? `Last used ${fmt(t.lastUsedAt)}` : "Not used yet"} · Stays connected while in use
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" disabled={revokeMutation.isPending}
+                    onClick={() => revokeMutation.mutate(t.id)} data-testid={`button-disconnect-${t.id}`}>
+                    <Trash2 className="h-4 w-4 mr-1" /> Disconnect
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
@@ -119,7 +160,7 @@ export function ConnectionsPage() {
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">New token</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">New personal token</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="token-name">Name</Label>
@@ -151,15 +192,15 @@ export function ConnectionsPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Active tokens</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Personal tokens</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : live.length === 0 ? (
+          ) : personal.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="text-no-tokens">No active tokens.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {live.map((t) => (
+              {personal.map((t) => (
                 <li key={t.id} className="py-3 flex items-start gap-3" data-testid={`token-${t.id}`}>
                   <div className="flex-1 min-w-0 space-y-1">
                     <p className="text-sm font-medium">{t.name} <span className="font-mono text-xs text-muted-foreground">{t.tokenPrefix}…</span></p>
