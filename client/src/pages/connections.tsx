@@ -27,7 +27,7 @@ export const SCOPE_OPTIONS: Array<{ id: Scope; label: string; hint: string }> = 
   { id: "profile:read", label: "Read profile", hint: "View your profile and page settings" },
   { id: "profile:write", label: "Edit profile", hint: "Change bio, role, location, rate, skills, links" },
   { id: "credits:read", label: "Read credits", hint: "View your filmography" },
-  { id: "credits:write", label: "Add credits", hint: "Add entries to your filmography" },
+  { id: "credits:write", label: "Manage credits", hint: "Add, edit and delete entries in your filmography" },
   { id: "page:write", label: "Customize page", hint: "Change theme, sections, headline, custom links" },
 ];
 

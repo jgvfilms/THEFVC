@@ -177,6 +177,63 @@ describe("MCP tools", () => {
     expect(credits[0].verified).toBeFalsy();
     await client.close();
   });
+
+  describe("update_credit / delete_credit", () => {
+    const setup = async (scopes: McpScope[] = ALL) => {
+      const { user, profile } = makeMember("editor");
+      const credit = storage.createCredit({ profileId: profile.id, productionTitle: "Zucchini", role: "Director", year: 2027, format: "feature" });
+      const { token } = issueMcpToken({ userId: user.id, name: "e", scopes });
+      return { user, profile, credit, client: await connect(token) };
+    };
+
+    it("edits only the fields passed", async () => {
+      const { credit, client } = await setup();
+      const r = await callText(client, "update_credit", { id: credit.id, format: "short" });
+      expect(r.isError).toBe(false);
+      expect(storage.getCredit(credit.id)).toMatchObject({ productionTitle: "Zucchini", role: "Director", year: 2027, format: "short" });
+      expect((await callText(client, "update_credit", { id: credit.id })).isError).toBe(true);
+      await client.close();
+    });
+
+    it("deletes the credit and keeps what it was in the audit log", async () => {
+      const { user, credit, client } = await setup();
+      expect((await callText(client, "delete_credit", { id: credit.id })).isError).toBe(false);
+      expect(storage.getCredit(credit.id)).toBeUndefined();
+      const rows = db.all<{ details: string }>(`SELECT details FROM security_audit_log WHERE user_id = ${user.id} AND action = 'mcp_credit_delete'` as any);
+      expect(JSON.stringify(rows)).toContain("Zucchini");
+      await client.close();
+    });
+
+    it("can't touch another member's credit, and can't tell it exists", async () => {
+      const { client } = await setup();
+      const other = makeMember("other");
+      const theirs = storage.createCredit({ profileId: other.profile.id, productionTitle: "Theirs", role: "DP", year: 2020 });
+      for (const [name, args] of [["update_credit", { id: theirs.id, role: "Hacked" }], ["delete_credit", { id: theirs.id }], ["delete_credit", { id: 999999 }]] as const) {
+        const r = await callText(client, name, args as any);
+        expect(r).toEqual({ text: "Credit not found", isError: true });
+      }
+      expect(storage.getCredit(theirs.id)).toMatchObject({ role: "DP" });
+      await client.close();
+    });
+
+    it("refuses to change or delete a verified credit", async () => {
+      const { profile, client } = await setup();
+      const v = storage.createCredit({ profileId: profile.id, productionTitle: "Verified One", role: "DP", year: 2019, verified: true });
+      expect((await callText(client, "update_credit", { id: v.id, role: "Director" })).isError).toBe(true);
+      expect((await callText(client, "delete_credit", { id: v.id })).isError).toBe(true);
+      expect(storage.getCredit(v.id)).toMatchObject({ role: "DP", verified: true });
+      await client.close();
+    });
+
+    it("needs the credits:write scope", async () => {
+      const { client } = await setup(["credits:read"]);
+      const names = (await client.listTools()).tools.map((t) => t.name);
+      expect(names).toContain("list_credits");
+      expect(names).not.toContain("update_credit");
+      expect(names).not.toContain("delete_credit");
+      await client.close();
+    });
+  });
 });
 
 describe("token management API", () => {

@@ -101,6 +101,9 @@ export interface IStorage {
   // Credits
   getCreditsByProfile(profileId: number): Credit[];
   createCredit(credit: InsertCredit): Credit;
+  getCredit(id: number): Credit | undefined;
+  updateCredit(id: number, data: Partial<Pick<InsertCredit, "productionTitle" | "role" | "year" | "format">>): Credit | undefined;
+  deleteCredit(id: number): boolean;
 
   // Beta Invites
   createInvite(data: { token: string; email?: string; displayName?: string; role?: string; maxUses?: number; createdBy: number; notes?: string }): BetaInvite;
@@ -493,6 +496,18 @@ export class DatabaseStorage implements IStorage {
   // ===== CREDITS =====
   getCreditsByProfile(profileId: number): Credit[] {
     return db.select().from(credits).where(eq(credits.profileId, profileId)).orderBy(desc(credits.year)).all();
+  }
+
+  getCredit(id: number): Credit | undefined {
+    return db.select().from(credits).where(eq(credits.id, id)).get();
+  }
+
+  updateCredit(id: number, data: Partial<Pick<InsertCredit, "productionTitle" | "role" | "year" | "format">>): Credit | undefined {
+    return db.update(credits).set(data).where(eq(credits.id, id)).returning().get();
+  }
+
+  deleteCredit(id: number): boolean {
+    return db.delete(credits).where(eq(credits.id, id)).run().changes > 0;
   }
 
   createCredit(credit: InsertCredit): Credit {

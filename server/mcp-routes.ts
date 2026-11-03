@@ -28,9 +28,11 @@ import {
 import { protectedResourceMetadataUrl } from "./oauth-routes";
 import { PROFILE_THEME_IDS, pageConfigSchema, parsePageConfig } from "@shared/page-config";
 import { AVAILABILITY_VALUES } from "./lib/profile-update";
-import type { McpToken } from "@shared/schema";
+import type { Credit, McpToken } from "@shared/schema";
 
 const MAX_TOKENS_PER_USER = 10;
+
+const CREDIT_FORMATS = ["feature", "short", "music_video", "commercial", "web", "documentary"] as const;
 
 const httpsUrl = z.string().url().max(500).refine((u) => u.startsWith("https://"), "must be an https URL");
 
@@ -160,7 +162,7 @@ function buildServer(principal: McpPrincipal, meta: { ip?: string; ua?: string }
           productionTitle: z.string().trim().min(1).max(200),
           role: z.string().trim().min(1).max(100),
           year: z.number().int().min(1900).max(2100),
-          format: z.enum(["feature", "short", "music_video", "commercial", "web", "documentary"]).optional(),
+          format: z.enum(CREDIT_FORMATS).optional(),
         },
       },
       async (args) => {
@@ -170,6 +172,57 @@ function buildServer(principal: McpPrincipal, meta: { ip?: string; ua?: string }
         const credit = storage.createCredit({ ...args, profileId: p.id });
         audit("mcp_credit_add", { creditId: credit.id });
         return text({ id: credit.id });
+      },
+    );
+
+    // Ownership is checked against the token's own profile, so an id that
+    // belongs to someone else is indistinguishable from one that doesn't exist.
+    // Verified credits are platform-granted and stay out of reach here.
+    // Returns the credit, or the message to fail with.
+    const ownCredit = (id: number): Credit | string => {
+      const p = storage.getProfile(principal.userId);
+      const credit = p ? storage.getCredit(id) : undefined;
+      if (!p || !credit || credit.profileId !== p.id) return "Credit not found";
+      if (credit.verified) return "Verified credits can't be changed here";
+      return credit;
+    };
+
+    server.registerTool(
+      "update_credit",
+      {
+        description: "Edit one of your credits (find its id with list_credits). Only the fields you pass are changed.",
+        inputSchema: {
+          id: z.number().int(),
+          productionTitle: z.string().trim().min(1).max(200).optional(),
+          role: z.string().trim().min(1).max(100).optional(),
+          year: z.number().int().min(1900).max(2100).optional(),
+          format: z.enum(CREDIT_FORMATS).optional(),
+        },
+      },
+      async ({ id, ...patch }) => {
+        const own = ownCredit(id);
+        if (typeof own === "string") return fail(own);
+        if (Object.keys(patch).length === 0) return fail("No fields provided");
+        storage.updateCredit(id, patch);
+        audit("mcp_credit_update", { creditId: id, fields: Object.keys(patch) });
+        return text(`Updated credit ${id}: ${Object.keys(patch).join(", ")}`);
+      },
+    );
+
+    server.registerTool(
+      "delete_credit",
+      {
+        description: "Permanently delete one of your credits (find its id with list_credits). Cannot be undone.",
+        inputSchema: { id: z.number().int() },
+      },
+      async ({ id }) => {
+        const own = ownCredit(id);
+        if (typeof own === "string") return fail(own);
+        storage.deleteCredit(id);
+        // Keep what was deleted: the credit itself is gone, so the log is the only record.
+        const { productionTitle, role, year } = own;
+        audit("mcp_credit_delete", { creditId: id, productionTitle, role, year });
+        return text(`Deleted credit ${id}`);
       },
     );
   }
