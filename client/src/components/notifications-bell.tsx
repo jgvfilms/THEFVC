@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useWebSocket, Notification } from "@/lib/useWebSocket";
 import { useAuth } from "@/lib/auth";
@@ -68,6 +69,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
  * Shows real-time unread count from WebSocket connection.
  */
 export function NotificationsBell() {
+  const [, setLocation] = useLocation();
   const { unreadCount, notifications, fetchNotifications, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
 
@@ -159,7 +161,7 @@ export function NotificationsBell() {
                   onClick={() => {
                     if (n.linkUrl) {
                       setOpen(false);
-                      window.location.hash = `#${n.linkUrl}`;
+                      setLocation(n.linkUrl);
                     }
                   }}
                 >

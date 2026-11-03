@@ -70,7 +70,7 @@ export function registerMessageRoutes(app: Express) {
 
     if (recipient.emailOnMessage !== false) {
       const recipientName = storage.getProfile(recipient.id)?.displayName || recipient.handle;
-      const tpl = newMessageTemplate({ recipientName, senderName, inboxUrl: `${baseUrl()}/#/app/messages` });
+      const tpl = newMessageTemplate({ recipientName, senderName, inboxUrl: `${baseUrl()}/app/messages` });
       try {
         await queueEmail({ to: recipient.email, ...tpl, metadata: { type: "new_message", userId: recipient.id } });
       } catch (err) {

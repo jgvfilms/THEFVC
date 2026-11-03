@@ -58,6 +58,9 @@ describe("member messaging", () => {
     expect(mail[0].to).toBe("bob@example.com");
     expect(mail[0].html + (mail[0].text ?? "") + mail[0].subject).not.toContain(secret);
     expect(mail[0].subject).toContain("alice");
+    // This SPA uses path routing; a "#/" link would land on the homepage.
+    expect(mail[0].text).toMatch(/\/app\/messages$/m);
+    expect(mail[0].text).not.toContain("#/");
   });
 
   it("skips the email when the recipient opted out, but still notifies in app", async () => {
