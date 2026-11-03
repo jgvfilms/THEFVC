@@ -13,9 +13,11 @@ import { MCP_SCOPES } from "./lib/mcp-tokens";
 import { createAuthorizationCode, oauthProvider, parseGrantedScopes, type PendingParams } from "./lib/oauth-provider";
 
 // The issuer must match the host clients actually reach (www, not the apex
-// that redirects to it), so it comes from config, not from the request.
+// that redirects to it), so it comes from config, not from the request. Same
+// production default as lib/google-oauth.ts: Railway doesn't set the variable.
 export function publicBaseUrl(): URL {
-  return new URL(process.env.PUBLIC_BASE_URL || "http://localhost:3000");
+  const fallback = process.env.NODE_ENV === "production" ? "https://www.thefvc.is" : `http://localhost:${process.env.PORT || 3000}`;
+  return new URL(process.env.PUBLIC_BASE_URL || fallback);
 }
 
 export const mcpResourceUrl = () => new URL("/mcp", publicBaseUrl());
