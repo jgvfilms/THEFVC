@@ -100,6 +100,35 @@ Non-obvious invariants, all covered by tests in `tests/api/invoicing.test.ts`:
 - **The dunning cron must run in exactly one process.** Scaling past one
   Railway replica means every replica sends the same reminder.
 
+## AI connections (MCP + OAuth)
+
+Members connect their own AI (claude.ai connector, Claude Code) to read and
+update *their* profile, credits and page. `server/mcp-routes.ts` is the endpoint
+(`POST /mcp`, stateless, fresh `McpServer` per request); `server/oauth-routes.ts`
++ `server/lib/oauth-provider.ts` are the OAuth 2.1 server the MCP SDK's
+`mcpAuthRouter` delegates to. UI: `client/src/pages/connections.tsx`,
+`oauth-consent.tsx`.
+
+Invariants (covered by `tests/api/mcp.test.ts` and `oauth.test.ts`):
+
+- **Identity comes only from the token.** No tool takes a user id. Credit
+  edit/delete check ownership and answer "not found" either way. Verified
+  credits are never changed over MCP.
+- **Tokens are `fvc_mcp_…`, stored as a SHA-256 hash**, shown once. A login
+  session token is rejected on `/mcp`; an MCP token can't mint tokens.
+- **OAuth access tokens are ordinary `mcp_tokens` rows** ("OAuth: <client>",
+  1 h). The refresh token rotates on every use and dies when its access token
+  is revoked. The Connections page lists one row per live grant, not per hour,
+  and only personal tokens count toward the 10-token limit.
+- **Consent can narrow scopes, never widen them.** Client names are
+  self-registered (untrusted); the consent page shows the redirect host.
+- **The issuer comes from `PUBLIC_BASE_URL`** (defaults to
+  `https://www.thefvc.is` in production), never the request.
+- **Page customization** (`profiles.page_config`, `shared/page-config.ts`) is
+  production-only: it is not in `Hermes/FVCfinalBoss`, which has its own themes.
+- **Anything with a `user_id` FK must be deleted in the erasure job** if this
+  repo ever gains one (FVCfinalBoss has it; foreign keys are on).
+
 ## Style
 
 - Comments explain *why*, not *what*. Prefer one sentence of rationale over a
