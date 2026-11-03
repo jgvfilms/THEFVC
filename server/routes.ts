@@ -27,6 +27,7 @@ import { generate1099Forms, generate1099NECData, get1099EligibleContractors } fr
 import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
 import { registerMcpRoutes } from "./mcp-routes";
+import { registerOAuthRoutes } from "./oauth-routes";
 import { pageConfigSchema } from "@shared/page-config";
 import { profileUpdateSchema, videoUrls } from "./lib/profile-update";
 import {
@@ -139,6 +140,7 @@ export async function registerRoutes(
   // Invoicing (admin CRUD + member read-only)
   registerInvoiceRoutes(app);
   // MCP endpoint + personal access tokens for members' own AI clients
+  registerOAuthRoutes(app);
   registerMcpRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —

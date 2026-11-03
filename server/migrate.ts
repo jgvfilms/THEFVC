@@ -67,6 +67,36 @@ const NEW_TABLES = [
     revoked_at INTEGER,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    client_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_pending (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    params TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_codes (
+    code_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    scopes TEXT NOT NULL,
+    code_challenge TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    scopes TEXT NOT NULL,
+    access_token_id INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  )`,
   `CREATE TABLE IF NOT EXISTS beta_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,

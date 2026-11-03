@@ -25,6 +25,7 @@ import {
   type McpPrincipal,
   type McpScope,
 } from "./lib/mcp-tokens";
+import { protectedResourceMetadataUrl } from "./oauth-routes";
 import { PROFILE_THEME_IDS, pageConfigSchema, parsePageConfig } from "@shared/page-config";
 import { AVAILABILITY_VALUES } from "./lib/profile-update";
 import type { McpToken } from "@shared/schema";
@@ -244,7 +245,8 @@ export function registerMcpRoutes(app: Express): void {
   app.post("/mcp", async (req: AuthedRequest, res: Response) => {
     const principal = authenticateMcpToken(bearer(req));
     if (!principal) {
-      res.setHeader("WWW-Authenticate", 'Bearer realm="thefvc"');
+      // resource_metadata is how an OAuth-capable client (claude.ai) discovers where to sign in.
+      res.setHeader("WWW-Authenticate", `Bearer realm="thefvc", resource_metadata="${protectedResourceMetadataUrl()}"`);
       return rpcError(res, 401, "Invalid or missing access token");
     }
     const server = buildServer(principal, { ip: req.ip, ua: req.headers["user-agent"] });

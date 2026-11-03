@@ -25,6 +25,7 @@ import { ProductionsList } from "./pages/productions";
 import { ProductionDetail } from "./pages/production-detail";
 import { AdminBetaPage } from "./pages/admin-beta";
 import NotFound from "./pages/not-found";
+import { OAuthConsentPage } from "./pages/oauth-consent";
 import { rememberReturnPath } from "./lib/return-path";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -71,6 +72,7 @@ export function AppRouter() {
       <Route path="/news" component={NewsPage} />
       <Route path="/app">{() => <DashboardPage><DashboardHome /></DashboardPage>}</Route>
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
+      <Route path="/app/oauth/consent/:id">{() => <ProtectedRoute><OAuthConsentPage /></ProtectedRoute>}</Route>
       <Route path="/app/connections">{() => <DashboardPage><ConnectionsPage /></DashboardPage>}</Route>
       <Route path="/app/productions/:id">{() => <DashboardPage><ProductionDetail /></DashboardPage>}</Route>
       <Route path="/app/productions">{() => <DashboardPage><ProductionsList /></DashboardPage>}</Route>

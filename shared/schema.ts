@@ -622,3 +622,49 @@ export const mcpTokens = sqliteTable("mcp_tokens", {
 
 export type McpToken = typeof mcpTokens.$inferSelect;
 export type InsertMcpToken = typeof mcpTokens.$inferInsert;
+
+// OAuth 2.1 for MCP connectors (claude.ai etc.). Access tokens are ordinary
+// mcp_tokens rows, so they show up in, and can be revoked from, the
+// Connections page; these tables hold only the authorization-flow state.
+export const oauthClients = sqliteTable("oauth_clients", {
+  clientId: text("client_id").primaryKey(),
+  clientJson: text("client_json").notNull(), // full OAuthClientInformationFull
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+// A started-but-undecided authorization request, parked while the member logs
+// in and approves. The random id is the only thing the consent page carries.
+export const oauthPending = sqliteTable("oauth_pending", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull(),
+  params: text("params").notNull(), // JSON: state, scopes, codeChallenge, redirectUri
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+});
+
+export const oauthCodes = sqliteTable("oauth_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  clientId: text("client_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  usedAt: integer("used_at", { mode: "timestamp" }),
+});
+
+export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  clientId: text("client_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  // The mcp_tokens row issued alongside this refresh token. Revoking that
+  // access token on the Connections page must also end the grant.
+  accessTokenId: integer("access_token_id").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+});
+
+export type OAuthClientRow = typeof oauthClients.$inferSelect;
+export type OAuthPendingRow = typeof oauthPending.$inferSelect;
+export type OAuthCodeRow = typeof oauthCodes.$inferSelect;
+export type OAuthRefreshRow = typeof oauthRefreshTokens.$inferSelect;

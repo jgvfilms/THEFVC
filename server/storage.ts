@@ -7,7 +7,7 @@ import {
   notifications,
   subscriptionTiers, payments, w9Forms,
   invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
-  mcpTokens,
+  mcpTokens, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -35,6 +35,7 @@ import type {
   InvoiceReminder, InsertInvoiceReminder,
   InvoiceEvent, InsertInvoiceEvent,
   McpToken, InsertMcpToken,
+  OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, and, or, desc, asc, sql, gte, lte, lt, inArray, getTableColumns } from "drizzle-orm";
@@ -83,6 +84,19 @@ export interface IStorage {
   listMcpTokens(userId: number): McpToken[];
   revokeMcpToken(id: number, userId: number): boolean;
   touchMcpToken(id: number): void;
+  getMcpToken(id: number): McpToken | undefined;
+  saveOAuthClient(clientId: string, clientJson: string): void;
+  getOAuthClient(clientId: string): OAuthClientRow | undefined;
+  createOAuthPending(row: OAuthPendingRow): void;
+  getOAuthPending(id: string): OAuthPendingRow | undefined;
+  deleteOAuthPending(id: string): void;
+  createOAuthCode(row: Omit<OAuthCodeRow, "usedAt">): void;
+  peekOAuthCode(codeHash: string): OAuthCodeRow | undefined;
+  consumeOAuthCode(codeHash: string): OAuthCodeRow | undefined;
+  createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void;
+  consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
+  revokeOAuthRefresh(tokenHash: string): void;
+  purgeExpiredOAuth(): void;
 
   // Credits
   getCreditsByProfile(profileId: number): Credit[];
@@ -412,6 +426,68 @@ export class DatabaseStorage implements IStorage {
 
   touchMcpToken(id: number): void {
     db.update(mcpTokens).set({ lastUsedAt: new Date() }).where(eq(mcpTokens.id, id)).run();
+  }
+
+  getMcpToken(id: number): McpToken | undefined {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.id, id)).get();
+  }
+
+  // ===== OAUTH (MCP connectors) =====
+  saveOAuthClient(clientId: string, clientJson: string): void {
+    db.insert(oauthClients).values({ clientId, clientJson }).run();
+  }
+
+  getOAuthClient(clientId: string): OAuthClientRow | undefined {
+    return db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId)).get();
+  }
+
+  createOAuthPending(row: OAuthPendingRow): void {
+    db.insert(oauthPending).values(row).run();
+  }
+
+  getOAuthPending(id: string): OAuthPendingRow | undefined {
+    return db.select().from(oauthPending).where(eq(oauthPending.id, id)).get();
+  }
+
+  deleteOAuthPending(id: string): void {
+    db.delete(oauthPending).where(eq(oauthPending.id, id)).run();
+  }
+
+  createOAuthCode(row: Omit<OAuthCodeRow, "usedAt">): void {
+    db.insert(oauthCodes).values(row).run();
+  }
+
+  peekOAuthCode(codeHash: string): OAuthCodeRow | undefined {
+    return db.select().from(oauthCodes).where(eq(oauthCodes.codeHash, codeHash)).get();
+  }
+
+  // Single UPDATE ... WHERE used_at IS NULL, so two racing exchanges of the
+  // same code can't both win.
+  consumeOAuthCode(codeHash: string): OAuthCodeRow | undefined {
+    return db.update(oauthCodes).set({ usedAt: new Date() })
+      .where(and(eq(oauthCodes.codeHash, codeHash), sql`${oauthCodes.usedAt} IS NULL`, gte(oauthCodes.expiresAt, new Date())))
+      .returning().get();
+  }
+
+  createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void {
+    db.insert(oauthRefreshTokens).values(row).run();
+  }
+
+  // Rotation: a refresh token is good for exactly one exchange.
+  consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined {
+    return db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
+      .where(and(eq(oauthRefreshTokens.tokenHash, tokenHash), sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
+      .returning().get();
+  }
+
+  revokeOAuthRefresh(tokenHash: string): void {
+    db.update(oauthRefreshTokens).set({ revokedAt: new Date() }).where(eq(oauthRefreshTokens.tokenHash, tokenHash)).run();
+  }
+
+  purgeExpiredOAuth(): void {
+    const now = new Date();
+    db.delete(oauthPending).where(lt(oauthPending.expiresAt, now)).run();
+    db.delete(oauthCodes).where(lt(oauthCodes.expiresAt, now)).run();
   }
 
   // ===== CREDITS =====

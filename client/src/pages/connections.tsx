@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, KeyRound, Trash2 } from "lucide-react";
 
-type Scope = "profile:read" | "profile:write" | "credits:read" | "credits:write" | "page:write";
+export type Scope = "profile:read" | "profile:write" | "credits:read" | "credits:write" | "page:write";
 
 interface McpTokenView {
   id: number;
@@ -23,7 +23,7 @@ interface McpTokenView {
   createdAt: string;
 }
 
-const SCOPE_OPTIONS: Array<{ id: Scope; label: string; hint: string }> = [
+export const SCOPE_OPTIONS: Array<{ id: Scope; label: string; hint: string }> = [
   { id: "profile:read", label: "Read profile", hint: "View your profile and page settings" },
   { id: "profile:write", label: "Edit profile", hint: "Change bio, role, location, rate, skills, links" },
   { id: "credits:read", label: "Read credits", hint: "View your filmography" },
