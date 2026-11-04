@@ -50,9 +50,11 @@ decrypts. Don't copy that pattern for anything hot — invoice lookups use a
 plaintext `stripe_invoice_id` with a unique index precisely to avoid it.
 
 **Money is always integer cents.** Never floats, never dollars in the DB.
-There is a known bug in the pre-existing subscription handler
-(`lib/stripe.ts`, `checkout.session.completed`) that divides `amount_total` by
-100 before storing into a cents column. Not fixed yet — don't imitate it.
+The subscription handler (`lib/stripe.ts`, `checkout.session.completed`) used
+to divide `amount_total` by 100 before storing it; that was fixed in `1d99b95`
+and is pinned by `tests/api/checkout-webhook.test.ts`. Subscription payment rows
+written before 2026-11-02 may hold about 1/100th of the real amount; no migration
+backfills them.
 
 **`TRUSTED_PROXY_HOPS` must match the real proxy depth** or rate limiting fails
 *silently*. Railway = `2`. See `.env.example`.
