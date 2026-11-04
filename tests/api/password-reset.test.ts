@@ -54,6 +54,19 @@ describe("Password reset", () => {
     expect(db.select().from(passwordResets).all()).toHaveLength(1);
   });
 
+  it("queues exactly one email, to the account owner, carrying the working reset link", async () => {
+    await post("/api/auth/password-reset/request", { email });
+    await post("/api/auth/password-reset/request", { email: "nobody@example.test" });
+    const token = latestToken();
+
+    // The unknown address must not get mail: that would both leak existence and spam strangers.
+    const mail = storage.getEmailQueue();
+    expect(mail).toHaveLength(1);
+    expect(mail[0].to).toBe(email);
+    expect(mail[0].subject).toBe("Password Reset Request");
+    expect(mail[0].html).toContain(`/reset-password?token=${token}`);
+  });
+
   it("request rejects a missing email", async () => {
     const res = await post("/api/auth/password-reset/request", {});
     expect(res.status).toBe(400);
