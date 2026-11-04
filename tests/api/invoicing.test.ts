@@ -279,6 +279,22 @@ describe("Invoicing", () => {
       expect(storage.getReminders(invoice.id).some((r) => r.status === "pending")).toBe(true);
     });
 
+    it("a late 'open' event never un-pays a paid or voided invoice", () => {
+      // Stripe doesn't guarantee delivery order: an invoice.sent snapshot
+      // (status open) can land after invoice.paid. It used to flip the row
+      // back to open, so a paid invoice showed as past due.
+      const paid = openInvoiceWithReminders();
+      syncInvoiceFromStripe(stripeInvoice({ status: "paid" }));
+      syncInvoiceFromStripe(stripeInvoice({ status: "open", amount_paid: 0, amount_due: 50000 }));
+      expect(storage.getInvoice(paid.id)!.status).toBe("paid");
+      expect(storage.getInvoice(paid.id)!.amountPaidCents).toBe(50000);
+
+      const voided = makeInvoice(makeUser("voidme").id, { status: "open", stripeInvoiceId: "in_test_void" });
+      syncInvoiceFromStripe(stripeInvoice({ id: "in_test_void", status: "void", amount_paid: 0, amount_due: 0 }));
+      syncInvoiceFromStripe(stripeInvoice({ id: "in_test_void", status: "open", amount_paid: 0, amount_due: 50000 }));
+      expect(storage.getInvoice(voided.id)!.status).toBe("void");
+    });
+
     it("ignores Stripe invoices that aren't ours", () => {
       openInvoiceWithReminders();
       const result = syncInvoiceFromStripe(stripeInvoice({ id: "in_someone_else" }));

@@ -367,6 +367,13 @@ export function syncInvoiceFromStripe(stripeInvoice: Stripe.Invoice): Invoice | 
   const status = mapStripeStatus(stripeInvoice.status);
   const wasUnpaid = local.status === "open";
 
+  // Stripe can deliver events out of order, and each carries a snapshot from
+  // when it fired. A paid or voided invoice never legitimately reopens, so a
+  // late invoice.sent (status open) must not overwrite it.
+  if ((local.status === "paid" || local.status === "void") && (status === "open" || status === "draft")) {
+    return local;
+  }
+
   const updated = storage.updateInvoice(local.id, {
     status,
     amountPaidCents: stripeInvoice.amount_paid ?? local.amountPaidCents,
