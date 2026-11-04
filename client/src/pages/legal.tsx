@@ -1,11 +1,22 @@
 import type { ReactNode } from "react";
 import { LandingShell } from "./landing";
 
-// Single place to change where privacy/legal requests go.
-const CONTACT_EMAIL = "admin@thefvc.is";
-const UPDATED = "November 3, 2026";
+// Single place to change where each kind of request goes. All of these are
+// cPanel forwarders on thefvc.is, so they can be re-pointed without a deploy.
+const EMAILS = {
+  support: "support@thefvc.is",
+  privacy: "privacy@thefvc.is",
+  legal: "legal@thefvc.is",
+  dmca: "dmca@thefvc.is",
+  abuse: "abuse@thefvc.is",
+  security: "security@thefvc.is",
+};
+function Mail({ to }: { to: string }) {
+  return <a href={`mailto:${to}`}>{to}</a>;
+}
+const UPDATED = "November 4, 2026";
 
-function LegalPage({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+function LegalPage({ id, title, contact, children }: { id: string; title: string; contact: string; children: ReactNode }) {
   return (
     <LandingShell>
       <section className="wrap page-body legal" aria-labelledby={`${id}-title`}>
@@ -15,7 +26,7 @@ function LegalPage({ id, title, children }: { id: string; title: string; childre
             {title}<span className="dot">.</span>
           </h1>
         </div>
-        <p className="note">Last updated {UPDATED}. Questions? Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+        <p className="note">Last updated {UPDATED}. Questions? Email <Mail to={contact} />.</p>
         {children}
       </section>
     </LandingShell>
@@ -24,7 +35,7 @@ function LegalPage({ id, title, children }: { id: string; title: string; childre
 
 export function PrivacyPage() {
   return (
-    <LegalPage id="privacy" title="Privacy policy">
+    <LegalPage id="privacy" title="Privacy policy" contact={EMAILS.privacy}>
       <p className="note">
         THEFVC.IS is run by the Film Video Collective ("FVC", "we"). This page explains what we collect, why, and what you can do about it.
         We built the site to help independent filmmakers find crew and manage productions, and we only collect what that takes.
@@ -60,7 +71,7 @@ export function PrivacyPage() {
       <h2>Your choices</h2>
       <ul>
         <li>Edit or remove profile information at any time from your profile page.</li>
-        <li>Ask us for a copy of your data, or to delete your account, by emailing <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. We cannot delete an account with an active subscription or pending payments until those are settled.</li>
+        <li>Ask us for a copy of your data, or to delete your account, by emailing <Mail to={EMAILS.privacy} />. We cannot delete an account with an active subscription or pending payments until those are settled.</li>
         <li>Revoke connected AI apps on the Connections page.</li>
       </ul>
 
@@ -78,7 +89,7 @@ export function PrivacyPage() {
 
 export function TermsPage() {
   return (
-    <LegalPage id="terms" title="Terms of service">
+    <LegalPage id="terms" title="Terms of service" contact={EMAILS.legal}>
       <p className="note">By creating an account or using THEFVC.IS you agree to these terms. If you do not agree, please do not use the site.</p>
 
       <h2>The service</h2>
@@ -110,8 +121,16 @@ export function TermsPage() {
       <h2>Limit of liability</h2>
       <p>To the fullest extent the law allows, FVC is not liable for indirect or consequential losses, lost profits or lost data arising from your use of the service. Our total liability for any claim is limited to the amount you paid us in the 12 months before it.</p>
 
+      <h2>Copyright and reports</h2>
+      <ul>
+        <li>If you believe something on the site infringes your copyright, email <Mail to={EMAILS.dmca} /> with what it is, where it is, and that you own or represent the rights.</li>
+        <li>To report harassment, spam or other misuse, email <Mail to={EMAILS.abuse} />.</li>
+        <li>To report a security problem, email <Mail to={EMAILS.security} />. Please give us a reasonable chance to fix it before sharing it publicly.</li>
+        <li>For help with your account or a payment, email <Mail to={EMAILS.support} />.</li>
+      </ul>
+
       <h2>Changes and contact</h2>
-      <p>We may update these terms and will change the date above when we do. Continuing to use the service after a change means you accept it. Questions? Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+      <p>We may update these terms and will change the date above when we do. Continuing to use the service after a change means you accept it. Questions? Email <Mail to={EMAILS.legal} />.</p>
     </LegalPage>
   );
 }
