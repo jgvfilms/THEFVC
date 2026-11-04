@@ -361,7 +361,7 @@ export function PaymentsPage() {
                 <FileText className="h-4 w-4" />
                 Tax Documents (W-9)
               </div>
-              <Link href="/w9">
+              <Link href="/app/w9">
                 <Button size="sm" data-testid="button-edit-w9">
                   {w9 ? "Edit W-9" : "Add W-9"}
                 </Button>
@@ -408,7 +408,7 @@ export function PaymentsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   No W-9 form on file. Submit one to receive payments.
                 </p>
-                <Link href="/w9">
+                <Link href="/app/w9">
                   <Button size="sm" data-testid="button-add-w9">
                     <Plus className="h-3 w-3 mr-1" />
                     Add W-9 Form
