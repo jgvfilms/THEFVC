@@ -94,7 +94,7 @@ const RESERVED_HANDLES = new Set([
   // stays reachable at /u/jgvfilms.
   "rosarito", "jgarrettvorreuter",
   // Content pages moved off the homepage.
-  "roadmap", "news",
+  "roadmap", "news", "privacy", "terms",
 ]);
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,29}$/;
 

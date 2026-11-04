@@ -11,6 +11,7 @@ import { NotificationsProvider } from "@/components/notifications-bell";
 import { Landing } from "./pages/landing";
 import { RoadmapPage } from "./pages/roadmap";
 import { NewsPage } from "./pages/news";
+import { PrivacyPage, TermsPage } from "./pages/legal";
 import { AuthPage } from "./pages/auth";
 import { ResetPasswordPage } from "./pages/reset-password";
 import { DashboardLayout } from "./pages/layout";
@@ -71,6 +72,8 @@ export function AppRouter() {
       <Route path="/crew" component={CrewFinder} />
       <Route path="/roadmap" component={RoadmapPage} />
       <Route path="/news" component={NewsPage} />
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route path="/app">{() => <DashboardPage><DashboardHome /></DashboardPage>}</Route>
       <Route path="/app/profile">{() => <DashboardPage><ProfileEdit /></DashboardPage>}</Route>
       <Route path="/app/oauth/consent/:id">{() => <ProtectedRoute><OAuthConsentPage /></ProtectedRoute>}</Route>

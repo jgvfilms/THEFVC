@@ -333,3 +333,7 @@
   --signal: #4fa3c7; --signal-ink: #0b1014; --frame: #0a0d10; --ok: #6fbf9a; --panel: #182027;
   --photo-tone: saturate(.8) contrast(1.05) brightness(.92);
   color-scheme: dark; }
+.fvc-lp .legal h2 { font: 800 1.5rem/1.1 var(--f-display); text-transform: uppercase; margin: 2.2rem 0 .6rem; }
+.fvc-lp .legal p, .fvc-lp .legal li { color: var(--ink-2); max-width: 66ch; line-height: 1.6; }
+.fvc-lp .legal ul { padding-left: 1.2rem; display: grid; gap: .5rem; margin-top: .5rem; }
+.fvc-lp .legal a { text-decoration: underline; }

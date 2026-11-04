@@ -80,6 +80,8 @@ export function LandingShell({ children, theme }: { children: React.ReactNode; t
             <a href="/#pricing">Pricing</a>
             <Link href="/roadmap">Roadmap</Link>
             <Link href="/news">Industry News</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
             <Link href="/auth">Log In</Link>
           </nav>
           <p className="label">© 2026 Film Video Collective</p>
