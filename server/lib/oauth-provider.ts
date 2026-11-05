@@ -9,7 +9,7 @@
  *    untrusted; the consent page shows the redirect host next to it.
  *  - /authorize parks the request and sends the browser to the consent page.
  *    Nothing is granted until a logged-in member approves there.
- *  - Access tokens are ordinary `mcp_tokens` rows (named "OAuth: <client>"), so
+ *  - Access tokens are ordinary `mcp_tokens` rows (kind `oauth_access`, tied to a grant), so
  *    /mcp needs no second auth path and members revoke them from the same list.
  *  - Refresh tokens rotate on every use and die with the access token they
  *    were issued alongside.
@@ -57,19 +57,24 @@ const clientsStore: OAuthRegisteredClientsStore = {
   },
 };
 
+// A client that asks for no scopes gets read access only; write access has to be
+// requested by name and then approved on the consent page.
+const READ_SCOPES: McpScope[] = ["profile:read", "credits:read"];
+
 export function parseGrantedScopes(requested: string[] | undefined): McpScope[] {
-  const wanted = requested?.length ? requested : [...MCP_SCOPES];
+  const wanted = requested?.length ? requested : READ_SCOPES;
   return MCP_SCOPES.filter((s) => wanted.includes(s));
 }
 
 const newSecret = (prefix: string) => prefix + randomBytes(32).toString("base64url");
 
-function issueTokens(opts: { userId: number; clientId: string; clientName: string; scopes: McpScope[] }): OAuthTokens {
+function issueTokens(opts: { userId: number; clientId: string; clientName: string; scopes: McpScope[]; grantId: number }): OAuthTokens {
   const { token, row } = issueMcpToken({
     userId: opts.userId,
     name: `OAuth: ${opts.clientName}`.slice(0, 60),
     scopes: opts.scopes,
     expiresAt: new Date(Date.now() + ACCESS_TTL_MS),
+    oauthGrantId: opts.grantId,
   });
   const refresh = newSecret("fvc_rt_");
   storage.createOAuthRefresh({
@@ -78,6 +83,7 @@ function issueTokens(opts: { userId: number; clientId: string; clientName: strin
     userId: opts.userId,
     scopes: JSON.stringify(opts.scopes),
     accessTokenId: row.id,
+    oauthGrantId: opts.grantId,
     expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
   });
   return {
@@ -133,24 +139,32 @@ export const oauthProvider: OAuthServerProvider = {
     const row = storage.consumeOAuthCode(hashMcpToken(code));
     if (!row || row.clientId !== client.client_id) throw new InvalidGrantError("Invalid or expired authorization code");
     if (redirectUri && redirectUri !== row.redirectUri) throw new InvalidGrantError("redirect_uri does not match the authorization request");
-    return issueTokens({
-      userId: row.userId,
-      clientId: client.client_id,
-      clientName: clientLabel(client),
-      scopes: parseGrantedScopes(JSON.parse(row.scopes)),
-    });
+    const scopes = parseGrantedScopes(JSON.parse(row.scopes));
+    const grant = storage.createOAuthGrant({ userId: row.userId, clientId: client.client_id, scopes: JSON.stringify(scopes) });
+    return issueTokens({ userId: row.userId, clientId: client.client_id, clientName: clientLabel(client), scopes, grantId: grant.id });
   },
 
   async exchangeRefreshToken(client, refreshToken, scopes) {
-    const row = storage.consumeOAuthRefresh(hashMcpToken(refreshToken));
-    if (!row || row.clientId !== client.client_id) throw new InvalidGrantError("Invalid or expired refresh token");
-    // Revoking the connector on the Connections page must end the grant, not
-    // just the one-hour access token.
-    if (storage.getMcpToken(row.accessTokenId)?.revokedAt) throw new InvalidGrantError("This connection was revoked");
+    const hash = hashMcpToken(refreshToken);
+    const existing = storage.getOAuthRefresh(hash);
+    if (!existing || existing.clientId !== client.client_id) throw new InvalidGrantError("Invalid or expired refresh token");
+    // A rotated-out token that is still inside its lifetime means two parties hold
+    // the same secret, so one of them stole it: end the whole grant. A merely
+    // expired token is just a stale client and must not take the grant with it.
+    if (existing.revokedAt && existing.expiresAt >= new Date()) {
+      if (existing.oauthGrantId) storage.revokeOAuthGrant(existing.oauthGrantId);
+      throw new InvalidGrantError("Invalid or expired refresh token");
+    }
+    const row = storage.consumeOAuthRefresh(hash);
+    if (!row) throw new InvalidGrantError("Invalid or expired refresh token");
+    // Revoking the connector on the Connections page ends the grant, not just
+    // the one-hour access token. Fail closed if the grant row is gone.
+    const grant = row.oauthGrantId ? storage.getOAuthGrant(row.oauthGrantId) : undefined;
+    if (!grant || grant.revokedAt) throw new InvalidGrantError("This connection was revoked");
     const granted = parseGrantedScopes(JSON.parse(row.scopes));
     // A refresh may narrow scopes, never widen them.
     const narrowed = scopes?.length ? granted.filter((s) => scopes.includes(s)) : granted;
-    return issueTokens({ userId: row.userId, clientId: client.client_id, clientName: clientLabel(client), scopes: narrowed });
+    return issueTokens({ userId: row.userId, clientId: client.client_id, clientName: clientLabel(client), scopes: narrowed, grantId: grant.id });
   },
 
   async verifyAccessToken(token) {
@@ -162,14 +176,16 @@ export const oauthProvider: OAuthServerProvider = {
   async revokeToken(client, request) {
     // Revocation is best-effort and silent for unknown tokens (RFC 7009).
     const hash = hashMcpToken(request.token);
-    const refresh = storage.consumeOAuthRefresh(hash);
+    const refresh = storage.getOAuthRefresh(hash);
     if (refresh && refresh.clientId === client.client_id) {
-      const access = storage.getMcpToken(refresh.accessTokenId);
-      if (access) storage.revokeMcpToken(access.id, access.userId);
+      if (refresh.oauthGrantId) storage.revokeOAuthGrant(refresh.oauthGrantId);
       return;
     }
+    // Only the issuing client may revoke, and only OAuth tokens (not personal ones).
     const access = storage.getMcpTokenByHash(hash);
-    if (access && access.name.startsWith("OAuth: ")) storage.revokeMcpToken(access.id, access.userId);
+    if (access?.kind === "oauth_access" && access.oauthGrantId && storage.getOAuthGrant(access.oauthGrantId)?.clientId === client.client_id) {
+      storage.revokeOAuthGrant(access.oauthGrantId);
+    }
   },
 };
 

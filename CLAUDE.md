@@ -118,10 +118,22 @@ Invariants (covered by `tests/api/mcp.test.ts` and `oauth.test.ts`):
   credits are never changed over MCP.
 - **Tokens are `fvc_mcp_…`, stored as a SHA-256 hash**, shown once. A login
   session token is rejected on `/mcp`; an MCP token can't mint tokens.
-- **OAuth access tokens are ordinary `mcp_tokens` rows** ("OAuth: <client>",
-  1 h). The refresh token rotates on every use and dies when its access token
-  is revoked. The Connections page lists one row per live grant, not per hour,
-  and only personal tokens count toward the 10-token limit.
+- **OAuth access tokens are `mcp_tokens` rows with `kind='oauth_access'`**
+  (1 h), each tied to an `oauth_grants` row, one per (member, app) connection.
+  Kind is stored, never inferred from the name. `authenticateMcpToken` **fails
+  closed**: a missing or revoked grant rejects the token. Revoking any of a
+  grant's tokens (Connections page, `/revoke`) revokes the grant, its access
+  tokens and its refresh tokens in one transaction. The refresh token rotates
+  on every use; presenting an already-rotated one that is still inside its
+  lifetime is treated as theft and revokes the grant, but a merely *expired*
+  one does not. The Connections page lists one row per live grant, and only
+  personal tokens count toward the 10-token limit.
+- **Scopes default to read-only** (`profile:read`, `credits:read`) when a client
+  asks for none; writes must be requested and approved.
+- **OAuth endpoint throttles are raised SDK limits, not `rateLimit()`.**
+  claude.ai shares egress IPs, and `rateLimit()` writes site-wide IP blocks.
+- **Upgrading**: `upgradeOAuthTables()` in `migrate.ts` adds the grant columns
+  and backfills a grant per existing (member, app); idempotent.
 - **Consent can narrow scopes, never widen them.** Client names are
   self-registered (untrusted); the consent page shows the redirect host.
 - **The issuer comes from `PUBLIC_BASE_URL`** (defaults to

@@ -605,6 +605,18 @@ export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
 export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
 export type InsertStripeWebhookEvent = typeof stripeWebhookEvents.$inferInsert;
 
+// One row per connected app per member. Access and refresh tokens hang off it,
+// so revoking the grant ends every token at once instead of racing them.
+export const oauthGrants = sqliteTable("oauth_grants", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull(),
+  scopes: text("scopes").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+});
+
 // ===== MCP ACCESS TOKENS =====
 // Personal access tokens that let a member's own AI client (Claude Desktop,
 // Claude Code, ...) call the /mcp endpoint as them. Only a SHA-256 of the
@@ -619,6 +631,10 @@ export const mcpTokens = sqliteTable("mcp_tokens", {
   lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
   expiresAt: integer("expires_at", { mode: "timestamp" }),
   revokedAt: integer("revoked_at", { mode: "timestamp" }),
+  // Explicit, not inferred from the name: a member can name a personal token
+  // anything, including "OAuth: ...".
+  kind: text("kind").notNull().default("personal"), // personal | oauth_access
+  oauthGrantId: integer("oauth_grant_id").references(() => oauthGrants.id, { onDelete: "cascade" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -632,6 +648,7 @@ export const oauthClients = sqliteTable("oauth_clients", {
   clientId: text("client_id").primaryKey(),
   clientJson: text("client_json").notNull(), // full OAuthClientInformationFull
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }), // bounds public client registration storage
 });
 
 // A started-but-undecided authorization request, parked while the member logs
@@ -662,10 +679,12 @@ export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
   // The mcp_tokens row issued alongside this refresh token. Revoking that
   // access token on the Connections page must also end the grant.
   accessTokenId: integer("access_token_id").notNull(),
+  oauthGrantId: integer("oauth_grant_id").references(() => oauthGrants.id, { onDelete: "cascade" }),
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
   revokedAt: integer("revoked_at", { mode: "timestamp" }),
 });
 
+export type OAuthGrantRow = typeof oauthGrants.$inferSelect;
 export type OAuthClientRow = typeof oauthClients.$inferSelect;
 export type OAuthPendingRow = typeof oauthPending.$inferSelect;
 export type OAuthCodeRow = typeof oauthCodes.$inferSelect;

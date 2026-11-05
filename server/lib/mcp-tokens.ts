@@ -19,7 +19,7 @@ export function hashMcpToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function issueMcpToken(opts: { userId: number; name: string; scopes: McpScope[]; expiresAt?: Date | null }) {
+export function issueMcpToken(opts: { userId: number; name: string; scopes: McpScope[]; expiresAt?: Date | null; oauthGrantId?: number }) {
   const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
   const row = storage.createMcpToken({
     userId: opts.userId,
@@ -28,6 +28,8 @@ export function issueMcpToken(opts: { userId: number; name: string; scopes: McpS
     tokenPrefix: token.slice(0, TOKEN_PREFIX.length + 4),
     scopes: JSON.stringify(opts.scopes),
     expiresAt: opts.expiresAt ?? null,
+    kind: opts.oauthGrantId ? "oauth_access" : "personal",
+    oauthGrantId: opts.oauthGrantId ?? null,
   });
   return { token, row };
 }
@@ -53,6 +55,12 @@ export function authenticateMcpToken(token: string | undefined): McpPrincipal | 
   const row: McpToken | undefined = storage.getMcpTokenByHash(hashMcpToken(token));
   if (!row || row.revokedAt) return null;
   if (row.expiresAt && row.expiresAt < new Date()) return null;
+  // Fail closed: an OAuth access token is only as good as its grant. A missing
+  // grant row is treated as revoked, never as "no restriction".
+  if (row.kind === "oauth_access") {
+    const grant = row.oauthGrantId ? storage.getOAuthGrant(row.oauthGrantId) : undefined;
+    if (!grant || grant.revokedAt) return null;
+  }
   storage.touchMcpToken(row.id);
   return { userId: row.userId, tokenId: row.id, scopes: new Set(parseScopes(row.scopes)) };
 }

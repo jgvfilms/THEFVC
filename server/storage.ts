@@ -7,7 +7,7 @@ import {
   notifications,
   subscriptionTiers, payments, w9Forms,
   invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
-  mcpTokens, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
+  mcpTokens, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -35,7 +35,7 @@ import type {
   InvoiceReminder, InsertInvoiceReminder,
   InvoiceEvent, InsertInvoiceEvent,
   McpToken, InsertMcpToken,
-  OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow,
+  OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow, OAuthGrantRow,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, and, or, desc, asc, sql, gte, lte, lt, inArray, getTableColumns } from "drizzle-orm";
@@ -94,9 +94,13 @@ export interface IStorage {
   peekOAuthCode(codeHash: string): OAuthCodeRow | undefined;
   consumeOAuthCode(codeHash: string): OAuthCodeRow | undefined;
   createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void;
+  getOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
   consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
-  revokeOAuthRefresh(tokenHash: string): void;
-  listLiveOAuthGrants(userId: number): OAuthRefreshRow[];
+  createOAuthGrant(data: { userId: number; clientId: string; scopes: string }): OAuthGrantRow;
+  getOAuthGrant(id: number): OAuthGrantRow | undefined;
+  listMcpTokensForGrant(grantId: number): McpToken[];
+  revokeOAuthGrant(id: number): void;
+  listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }>;
   purgeExpiredOAuth(): void;
 
   // Credits
@@ -422,9 +426,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Scoped by userId so one member can never revoke another's token by id.
+  // Revoking a connected app's access token ends the whole grant: otherwise the
+  // refresh token would mint a replacement an hour later.
   revokeMcpToken(id: number, userId: number): boolean {
+    const row = db.select().from(mcpTokens).where(and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId))).get();
+    if (!row) return false;
+    if (row.oauthGrantId) {
+      this.revokeOAuthGrant(row.oauthGrantId);
+      return !row.revokedAt;
+    }
     const res = db.update(mcpTokens).set({ revokedAt: new Date() })
-      .where(and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId), sql`${mcpTokens.revokedAt} IS NULL`)).run();
+      .where(and(eq(mcpTokens.id, id), sql`${mcpTokens.revokedAt} IS NULL`)).run();
     return res.changes > 0;
   }
 
@@ -477,21 +489,50 @@ export class DatabaseStorage implements IStorage {
     db.insert(oauthRefreshTokens).values(row).run();
   }
 
-  // Rotation: a refresh token is good for exactly one exchange.
+  getOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined {
+    return db.select().from(oauthRefreshTokens).where(eq(oauthRefreshTokens.tokenHash, tokenHash)).get();
+  }
+
+  // Rotation: a refresh token is good for exactly one exchange. Callers that
+  // need to tell "replayed" from "expired" use getOAuthRefresh first.
   consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined {
     return db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
       .where(and(eq(oauthRefreshTokens.tokenHash, tokenHash), sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
       .returning().get();
   }
 
-  revokeOAuthRefresh(tokenHash: string): void {
-    db.update(oauthRefreshTokens).set({ revokedAt: new Date() }).where(eq(oauthRefreshTokens.tokenHash, tokenHash)).run();
+  createOAuthGrant(data: { userId: number; clientId: string; scopes: string }): OAuthGrantRow {
+    return db.insert(oauthGrants).values(data).returning().get();
   }
 
-  listLiveOAuthGrants(userId: number): OAuthRefreshRow[] {
-    return db.select().from(oauthRefreshTokens)
-      .where(and(eq(oauthRefreshTokens.userId, userId), sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
-      .orderBy(desc(oauthRefreshTokens.expiresAt)).all();
+  getOAuthGrant(id: number): OAuthGrantRow | undefined {
+    return db.select().from(oauthGrants).where(eq(oauthGrants.id, id)).get();
+  }
+
+  listMcpTokensForGrant(grantId: number): McpToken[] {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.oauthGrantId, grantId)).orderBy(desc(mcpTokens.createdAt), desc(mcpTokens.id)).all();
+  }
+
+  // One transaction so a grant is never half-revoked: its access tokens and
+  // refresh tokens all die together.
+  revokeOAuthGrant(id: number): void {
+    const now = new Date();
+    db.transaction((tx) => {
+      tx.update(oauthGrants).set({ revokedAt: now }).where(and(eq(oauthGrants.id, id), sql`${oauthGrants.revokedAt} IS NULL`)).run();
+      tx.update(mcpTokens).set({ revokedAt: now }).where(and(eq(mcpTokens.oauthGrantId, id), sql`${mcpTokens.revokedAt} IS NULL`)).run();
+      tx.update(oauthRefreshTokens).set({ revokedAt: now }).where(and(eq(oauthRefreshTokens.oauthGrantId, id), sql`${oauthRefreshTokens.revokedAt} IS NULL`)).run();
+    });
+  }
+
+  // A grant is live while it is unrevoked and still has a usable refresh token.
+  listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }> {
+    const rows = db.select({ grant: oauthGrants, refreshExpiresAt: sql<number>`MAX(${oauthRefreshTokens.expiresAt})` })
+      .from(oauthGrants)
+      .innerJoin(oauthRefreshTokens, eq(oauthRefreshTokens.oauthGrantId, oauthGrants.id))
+      .where(and(eq(oauthGrants.userId, userId), sql`${oauthGrants.revokedAt} IS NULL`, sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
+      .groupBy(oauthGrants.id)
+      .orderBy(desc(oauthGrants.createdAt)).all();
+    return rows.map((r) => ({ ...r.grant, refreshExpiresAt: new Date(r.refreshExpiresAt * 1000) }));
   }
 
   purgeExpiredOAuth(): void {

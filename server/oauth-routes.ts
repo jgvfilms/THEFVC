@@ -51,6 +51,14 @@ export function registerOAuthRoutes(app: Express) {
       resourceServerUrl: mcpResourceUrl(),
       scopesSupported: [...MCP_SCOPES],
       resourceName: "THEFVC.IS",
+      // The SDK's defaults are per-IP, and claude.ai connects from shared egress
+      // addresses, so they are raised to keep one busy app from locking out the
+      // rest. These are plain in-memory throttles: unlike rateLimit() they never
+      // write a site-wide IP block.
+      clientRegistrationOptions: { rateLimit: { windowMs: 60 * 60 * 1000, max: 200 } },
+      authorizationOptions: { rateLimit: { windowMs: 15 * 60 * 1000, max: 600 } },
+      tokenOptions: { rateLimit: { windowMs: 15 * 60 * 1000, max: 1000 } },
+      revocationOptions: { rateLimit: { windowMs: 15 * 60 * 1000, max: 600 } },
     }),
   );
 

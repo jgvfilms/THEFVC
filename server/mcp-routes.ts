@@ -65,8 +65,8 @@ const pageUpdateShape = {
   customLinks: pageConfigSchema.shape.customLinks.optional(),
 };
 
-// OAuth access tokens are named "OAuth: <client>" (see lib/oauth-provider.ts).
-const isOAuthToken = (t: McpToken) => t.name.startsWith("OAuth: ");
+// Decided by the stored kind, never the name: a member can call a personal token anything.
+const isOAuthToken = (t: McpToken) => t.kind === "oauth_access";
 
 function tokenView(t: McpToken) {
   return {
@@ -276,9 +276,11 @@ export function registerMcpRoutes(app: Express): void {
       .filter((t) => !isOAuthToken(t) && !t.revokedAt && !(t.expiresAt && t.expiresAt < now))
       .map(tokenView);
     const apps = storage.listLiveOAuthGrants(req.userId!).flatMap((g) => {
-      const t = storage.getMcpToken(g.accessTokenId);
-      if (!t || t.revokedAt) return [];
-      return [{ ...tokenView(t), kind: "app" as const, name: t.name.replace(/^OAuth: /, ""), scopes: parseScopes(g.scopes), expiresAt: g.expiresAt }];
+      // The row's id is the grant's newest access token, so DELETE keeps working
+      // by token id and revokes the whole grant.
+      const t = storage.listMcpTokensForGrant(g.id)[0];
+      if (!t) return [];
+      return [{ ...tokenView(t), kind: "app" as const, name: t.name.replace(/^OAuth: /, ""), scopes: parseScopes(g.scopes), expiresAt: g.refreshExpiresAt, lastUsedAt: g.lastUsedAt ?? t.lastUsedAt }];
     });
     res.json([...apps, ...personal]);
   });

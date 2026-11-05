@@ -21,7 +21,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   for (const table of [
-    "oauth_refresh_tokens", "oauth_codes", "oauth_pending", "oauth_clients",
+    "oauth_refresh_tokens", "oauth_codes", "oauth_grants", "oauth_pending", "oauth_clients",
     "mcp_tokens", "security_audit_log", "profiles", "sessions", "users",
   ]) {
     try {
@@ -308,3 +308,87 @@ describe("Connections list", () => {
   });
 });
 
+
+describe("Grant hardening", () => {
+  const refreshWith = (client: any, rt: string) =>
+    exchange({ grant_type: "refresh_token", refresh_token: rt, client_id: client.client_id });
+  const callMcp = (accessToken: string) =>
+    fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+
+  it("revokes the whole grant when an already-rotated refresh token is replayed", async () => {
+    const { session } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    const first = await (await exchange(tokenParams(client, code, verifier))).json();
+    const second = await (await refreshWith(client, first.refresh_token)).json();
+    expect((await callMcp(second.access_token)).status).toBe(200);
+
+    expect((await refreshWith(client, first.refresh_token)).status).toBe(400); // replay
+    expect((await callMcp(second.access_token)).status).toBe(401);
+    expect((await refreshWith(client, second.refresh_token)).status).toBe(400);
+  });
+
+  it("does not revoke the grant for a merely expired refresh token", async () => {
+    const { session } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    const first = await (await exchange(tokenParams(client, code, verifier))).json();
+    const second = await (await refreshWith(client, first.refresh_token)).json();
+    // Age the *rotated-out* first token past its lifetime, then present it.
+    db.run(`UPDATE oauth_refresh_tokens SET expires_at = ${Math.floor(Date.now() / 1000) - 60} WHERE revoked_at IS NOT NULL`);
+    expect((await refreshWith(client, first.refresh_token)).status).toBe(400);
+    expect((await callMcp(second.access_token)).status).toBe(200);
+  });
+
+  it("rejects an OAuth access token whose grant row is missing", async () => {
+    const { session } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    const tokens = await (await exchange(tokenParams(client, code, verifier))).json();
+    db.run("PRAGMA foreign_keys = OFF");
+    db.run("DELETE FROM oauth_grants");
+    db.run("PRAGMA foreign_keys = ON");
+    expect((await callMcp(tokens.access_token)).status).toBe(401);
+  });
+
+  it("gives read-only scopes when the client asks for none", async () => {
+    const { session } = makeMember();
+    const { client, verifier, code } = await getCode(session);
+    void client; void verifier; void code;
+    const { parseGrantedScopes } = await import("../../server/lib/oauth-provider");
+    expect(parseGrantedScopes(undefined)).toEqual(["profile:read", "credits:read"]);
+  });
+
+  it("treats a personal token named 'OAuth: x' as personal", async () => {
+    const { session, user } = makeMember();
+    const res = await fetch(`${baseUrl}/api/mcp/tokens`, {
+      method: "POST", headers: asMember(session), body: JSON.stringify({ name: "OAuth: sneaky", scopes: ["profile:read"] }),
+    });
+    expect(res.status).toBe(201);
+    const rows = (await (await fetch(`${baseUrl}/api/mcp/tokens`, { headers: asMember(session) })).json()) as Array<{ kind: string }>;
+    expect(rows.map((r) => r.kind)).toEqual(["token"]);
+    expect(storage.listMcpTokens(user.id)[0].kind).toBe("personal");
+  });
+});
+
+describe("Upgrade of a pre-grant database", () => {
+  it("backfills grants for existing OAuth rows and is idempotent", async () => {
+    const { user } = makeMember("legacy");
+    const now = Math.floor(Date.now() / 1000);
+    // Rebuild the old shape: no grants, access/refresh rows only.
+    db.run(`INSERT INTO mcp_tokens (id, user_id, name, token_hash, token_prefix, scopes, expires_at, created_at)
+            VALUES (900, ${user.id}, 'OAuth: Old AI', 'legacy-h', 'fvc_mcp_', '["profile:read"]', ${now + 3600}, ${now})`);
+    db.run(`INSERT INTO oauth_refresh_tokens (token_hash, client_id, user_id, scopes, access_token_id, expires_at)
+            VALUES ('legacy-rt', 'client-1', ${user.id}, '["profile:read"]', 900, ${now + 86400})`);
+    const { runMigrations } = await import("../../server/migrate");
+    runMigrations();
+    runMigrations();
+    const grants = db.all<{ id: number; revoked_at: number | null }>("SELECT id, revoked_at FROM oauth_grants" as any) as any[];
+    expect(grants).toHaveLength(1);
+    expect(grants[0].revoked_at).toBeNull();
+    const tok = storage.getMcpToken(900)!;
+    expect(tok.kind).toBe("oauth_access");
+    expect(tok.oauthGrantId).toBe(grants[0].id);
+  });
+});

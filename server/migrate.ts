@@ -56,6 +56,15 @@ const PRODUCTION_COLUMNS: Array<{ name: string; def: string }> = [
 ];
 
 const NEW_TABLES = [
+  `CREATE TABLE IF NOT EXISTS oauth_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    client_id TEXT NOT NULL,
+    scopes TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER
+  )`,
   `CREATE TABLE IF NOT EXISTS mcp_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -66,12 +75,15 @@ const NEW_TABLES = [
     last_used_at INTEGER,
     expires_at INTEGER,
     revoked_at INTEGER,
+    kind TEXT NOT NULL DEFAULT 'personal' CHECK(kind IN ('personal', 'oauth_access')),
+    oauth_grant_id INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS oauth_clients (
     client_id TEXT PRIMARY KEY,
     client_json TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
   )`,
   `CREATE TABLE IF NOT EXISTS oauth_pending (
     id TEXT PRIMARY KEY,
@@ -95,6 +107,7 @@ const NEW_TABLES = [
     user_id INTEGER NOT NULL REFERENCES users(id),
     scopes TEXT NOT NULL,
     access_token_id INTEGER NOT NULL,
+    oauth_grant_id INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,
     revoked_at INTEGER
   )`,
@@ -385,6 +398,56 @@ const INDEXES = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`,
 ];
 
+
+// The MCP/OAuth tables shipped before grants existed, so a live database has the
+// old shape and CREATE TABLE IF NOT EXISTS won't touch it. Add the columns, then
+// give every pre-existing connection a grant so it keeps working and can still
+// be revoked as one unit. Idempotent: it only looks at rows with no grant yet.
+function upgradeOAuthTables() {
+  const addMissing = (table: string, cols: Array<{ name: string; def: string }>) => {
+    const have = new Set((sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name));
+    for (const col of cols) if (!have.has(col.name)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.def}`);
+  };
+  addMissing("mcp_tokens", [
+    { name: "kind", def: "TEXT NOT NULL DEFAULT 'personal' CHECK(kind IN ('personal', 'oauth_access'))" },
+    { name: "oauth_grant_id", def: "INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE" },
+  ]);
+  addMissing("oauth_refresh_tokens", [{ name: "oauth_grant_id", def: "INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE" }]);
+  addMissing("oauth_clients", [{ name: "last_used_at", def: "INTEGER" }]);
+
+  sqlite.transaction(() => {
+    // One grant per (member, app). A refresh chain can't be reconstructed exactly
+    // from rotated rows, and grouping this way never merges two members' apps.
+    const groups = sqlite.prepare(
+      `SELECT user_id, client_id, MIN(expires_at) AS first_expires,
+              MAX(CASE WHEN revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS live
+         FROM oauth_refresh_tokens WHERE oauth_grant_id IS NULL GROUP BY user_id, client_id`,
+    ).all(Math.floor(Date.now() / 1000)) as Array<{ user_id: number; client_id: string; live: number }>;
+    for (const g of groups) {
+      const latest = sqlite.prepare(
+        `SELECT scopes FROM oauth_refresh_tokens WHERE user_id = ? AND client_id = ? AND oauth_grant_id IS NULL ORDER BY expires_at DESC LIMIT 1`,
+      ).get(g.user_id, g.client_id) as { scopes: string };
+      const now = Math.floor(Date.now() / 1000); // timestamp columns hold seconds
+      const grant = sqlite.prepare(
+        `INSERT INTO oauth_grants (user_id, client_id, scopes, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)`,
+      ).run(g.user_id, g.client_id, latest.scopes, now, g.live ? null : now);
+      sqlite.prepare(`UPDATE oauth_refresh_tokens SET oauth_grant_id = ? WHERE user_id = ? AND client_id = ? AND oauth_grant_id IS NULL`)
+        .run(grant.lastInsertRowid, g.user_id, g.client_id);
+    }
+    // Access tokens are identified by the refresh rows issued with them, not by name.
+    sqlite.exec(
+      `UPDATE mcp_tokens
+          SET kind = 'oauth_access',
+              oauth_grant_id = (SELECT r.oauth_grant_id FROM oauth_refresh_tokens r WHERE r.access_token_id = mcp_tokens.id)
+        WHERE kind = 'personal' AND id IN (SELECT access_token_id FROM oauth_refresh_tokens)`,
+    );
+  })();
+
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_oauth_grants_user ON oauth_grants(user_id, revoked_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_mcp_tokens_grant ON mcp_tokens(oauth_grant_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_oauth_refresh_grant ON oauth_refresh_tokens(oauth_grant_id)");
+}
+
 export function runMigrations() {
   // Profile columns
   const profileCols = sqlite.prepare("PRAGMA table_info(profiles)").all() as Array<{ name: string }>;
@@ -410,6 +473,8 @@ export function runMigrations() {
   for (const sql of NEW_TABLES) {
     sqlite.exec(sql);
   }
+
+  upgradeOAuthTables();
 
   // Indexes (after tables exist)
   for (const sql of INDEXES) {
