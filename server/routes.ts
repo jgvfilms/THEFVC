@@ -22,7 +22,7 @@ import {
 } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { encryptSensitive, decryptSensitive, maskTaxId, isValidTaxId } from "./lib/encryption";
-import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, stripe } from "./lib/stripe";
+import { createStripeConnectAccount, createAccountLink, handleStripeWebhook, syncConnectOnboarding, stripe } from "./lib/stripe";
 import { generate1099Forms, generate1099NECData, get1099EligibleContractors } from "./lib/tax-documents";
 import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
@@ -1990,6 +1990,8 @@ export async function registerRoutes(
     }
   });
 
+  // The return page calls this after Stripe's hosted onboarding. The client's
+  // say-so is worthless (it used to set "active" for anyone), so we ask Stripe.
   app.post("/api/stripe/onboarding-complete", requireAuth, async (req: AuthedRequest, res: Response) => {
     storage.createSecurityLog({
       userId: req.userId!,
@@ -1999,10 +2001,15 @@ export async function registerRoutes(
       details: JSON.stringify({}),
       requestId: req.requestId || null,
     });
-    storage.updateProfileSubscription(req.userId!, {
-      subscriptionStatus: "active",
-    });
-    res.json({ success: true });
+    const accountId = storage.getProfile(req.userId!)?.stripeConnectAccountId;
+    if (!accountId) return res.status(400).json({ error: "No payout account has been started." });
+    try {
+      const ready = await syncConnectOnboarding(req.userId!, accountId);
+      res.json({ success: ready, onboardingComplete: ready });
+    } catch (err) {
+      console.error("Stripe onboarding check failed:", err);
+      res.status(502).json({ error: "Could not check your payout account with Stripe." });
+    }
   });
 
   // PRD-019: Stripe webhook endpoint

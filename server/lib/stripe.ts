@@ -57,6 +57,21 @@ export async function createAccountLink(
 }
 
 /**
+ * Ask Stripe whether a connected account can take charges and receive payouts,
+ * and record the answer. Returns whether onboarding is finished. It only moves a
+ * member who is still "onboarding": subscription_status is shared with the
+ * subscription flow, and a Connect check must not overwrite "active"/"canceled"
+ * that came from a subscription.
+ */
+export async function syncConnectOnboarding(userId: number, accountId: string): Promise<boolean> {
+  const account = await stripe.accounts.retrieve(accountId);
+  const ready = !!(account.charges_enabled && account.payouts_enabled);
+  const current = storage.getProfile(userId)?.subscriptionStatus;
+  if (ready && current === "onboarding") storage.updateProfileSubscription(userId, { subscriptionStatus: "active" });
+  return ready;
+}
+
+/**
  * Create a PaymentIntent for a charge to a connected account.
  * Used when a customer pays a crew member.
  */
