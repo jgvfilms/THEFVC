@@ -28,6 +28,7 @@ import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
 import { registerMcpRoutes } from "./mcp-routes";
 import { registerMessageRoutes } from "./message-routes";
+import { registerProductionPaymentRoutes } from "./production-payment-routes";
 import { registerOAuthRoutes } from "./oauth-routes";
 import { pageConfigSchema } from "@shared/page-config";
 import { profileUpdateSchema, videoUrls } from "./lib/profile-update";
@@ -144,6 +145,7 @@ export async function registerRoutes(
   registerOAuthRoutes(app);
   registerMcpRoutes(app);
   registerMessageRoutes(app);
+  registerProductionPaymentRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —
   // not payments, browsing, or anything else on the API. blockDurationMs is
@@ -1973,7 +1975,7 @@ export async function registerRoutes(
         return res.json({
           stripeAccountId: profile.stripeConnectAccountId,
           onboardingLink,
-          onboardingComplete: profile.subscriptionStatus === "active",
+          onboardingComplete: !!(profile.connectChargesEnabled && profile.connectPayoutsEnabled),
         });
       }
       const stripeAccountId = await createStripeConnectAccount(req.userId!, user.email);

@@ -9,6 +9,7 @@ import { CreditCard, FileText, TrendingUp, Calendar, Download, Plus, ExternalLin
 import type { Payment, SubscriptionTier, W9Form, Profile } from "@shared/schema";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { PayoutsCard } from "@/components/production-payments";
 
 interface SubscriptionStatus {
   tier: string;
@@ -98,6 +99,8 @@ export function PaymentsPage() {
           Manage your subscription, view payment history, and handle tax documents.
         </p>
       </div>
+
+      <PayoutsCard />
 
       {/* Current Plan Card (PRD-020) */}
       <Card>

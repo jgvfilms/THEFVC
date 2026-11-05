@@ -102,6 +102,27 @@ Non-obvious invariants, all covered by tests in `tests/api/invoicing.test.ts`:
 - **The dunning cron must run in exactly one process.** Scaling past one
   Railway replica means every replica sends the same reminder.
 
+## Production payments (Stripe Connect)
+
+A production owner pays a confirmed crew member, or requests money for the
+production, through the **payee's own Express account** (direct charge,
+Checkout Session with `stripeAccount`). The payee is merchant of record, so
+disputes and refunds are theirs; FVC takes `platformFeeCents` (5%, waived when
+the *payer* is Pro/Studio). Code: `lib/production-payments.ts`,
+`production-payment-routes.ts`, UI `components/production-payments.tsx`.
+
+- **Money is marked paid only by the verified Connect webhook**
+  (`POST /api/stripe/connect-webhook`, its own secret
+  `STRIPE_CONNECT_WEBHOOK_SECRET`; 503 when unset). The handler checks the event's
+  `account` is the payee's, and the amount/currency match the row.
+- **Connect readiness is `profiles.connect_charges_enabled/_payouts_enabled`**,
+  set only from Stripe. It no longer touches `subscription_status`.
+- **The Checkout URL is an unauthenticated pay link**: made per request, returned
+  only to the production owner, never stored or logged.
+- A separate **"Connected accounts"** destination must exist in the live Stripe
+  Dashboard (events `account.updated`, `checkout.session.completed`); the
+  platform webhook does not receive connected-account events.
+
 ## AI connections (MCP + OAuth)
 
 Members connect their own AI (claude.ai connector, Claude Code) to read and

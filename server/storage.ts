@@ -7,7 +7,7 @@ import {
   notifications,
   subscriptionTiers, payments, w9Forms,
   invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
-  mcpTokens, messages, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
+  mcpTokens, messages, productionPayments, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -34,7 +34,7 @@ import type {
   InvoiceLineItem, InsertInvoiceLineItem,
   InvoiceReminder, InsertInvoiceReminder,
   InvoiceEvent, InsertInvoiceEvent,
-  McpToken, InsertMcpToken, Message,
+  McpToken, InsertMcpToken, Message, ProductionPayment,
   OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow, OAuthGrantRow,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -102,6 +102,14 @@ export interface IStorage {
   revokeOAuthGrant(id: number): void;
   listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }>;
   purgeExpiredOAuth(): void;
+
+  // Production payments (Stripe Connect)
+  createProductionPayment(data: typeof productionPayments.$inferInsert): ProductionPayment;
+  getProductionPayment(id: number): ProductionPayment | undefined;
+  listProductionPayments(productionId: number): ProductionPayment[];
+  setProductionPaymentSession(id: number, sessionId: string): void;
+  cancelProductionPayment(id: number): boolean;
+  markProductionPaymentPaid(id: number, paymentIntentId: string | null): boolean;
 
   // Member messages (read side; sending lives in message-routes)
   listConversations(userId: number): Array<{ otherId: number; last: Message; unread: number }>;
@@ -217,6 +225,8 @@ export interface IStorage {
     subscriptionTier?: string;
     subscriptionStatus?: string;
     w9Collected?: boolean;
+    connectChargesEnabled?: boolean;
+    connectPayoutsEnabled?: boolean;
   }): Profile | undefined;
 
   // ===== CREW FINDER PAGINATION (PRD-006) =====
@@ -544,6 +554,37 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     db.delete(oauthPending).where(lt(oauthPending.expiresAt, now)).run();
     db.delete(oauthCodes).where(lt(oauthCodes.expiresAt, now)).run();
+  }
+
+  // ===== PRODUCTION PAYMENTS =====
+  createProductionPayment(data: typeof productionPayments.$inferInsert): ProductionPayment {
+    return db.insert(productionPayments).values(data).returning().get();
+  }
+
+  getProductionPayment(id: number): ProductionPayment | undefined {
+    return db.select().from(productionPayments).where(eq(productionPayments.id, id)).get();
+  }
+
+  listProductionPayments(productionId: number): ProductionPayment[] {
+    return db.select().from(productionPayments).where(eq(productionPayments.productionId, productionId))
+      .orderBy(desc(productionPayments.createdAt), desc(productionPayments.id)).all();
+  }
+
+  setProductionPaymentSession(id: number, sessionId: string): void {
+    db.update(productionPayments).set({ stripeSessionId: sessionId }).where(eq(productionPayments.id, id)).run();
+  }
+
+  // Only a pending payment can be canceled; a paid one is a financial record.
+  cancelProductionPayment(id: number): boolean {
+    return db.update(productionPayments).set({ status: "canceled" })
+      .where(and(eq(productionPayments.id, id), eq(productionPayments.status, "pending"))).run().changes > 0;
+  }
+
+  // Idempotent: a redelivered webhook finds it already paid and changes nothing.
+  markProductionPaymentPaid(id: number, paymentIntentId: string | null): boolean {
+    return db.update(productionPayments)
+      .set({ status: "paid", paidAt: new Date(), stripePaymentIntentId: paymentIntentId })
+      .where(and(eq(productionPayments.id, id), sql`${productionPayments.status} != 'paid'`)).run().changes > 0;
   }
 
   // ===== MESSAGES (read side) =====
@@ -969,6 +1010,8 @@ export class DatabaseStorage implements IStorage {
     subscriptionTier?: string;
     subscriptionStatus?: string;
     w9Collected?: boolean;
+    connectChargesEnabled?: boolean;
+    connectPayoutsEnabled?: boolean;
   }): Profile | undefined {
     db.update(profiles).set({ ...data, updatedAt: new Date() }).where(eq(profiles.userId, userId)).run();
     return this.getProfile(userId);

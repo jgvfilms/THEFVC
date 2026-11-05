@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, MapPin, Calendar, DollarSign, Users, Trash2, ImagePlus } from "lucide-react";
 import type { Production, ProductionCrew, Profile } from "@shared/schema";
+import { PayoutsCard, ProductionPayments } from "@/components/production-payments";
 
 interface ProductionDetailData {
   production: Production;
@@ -382,6 +383,9 @@ export function ProductionDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PayoutsCard />
+      <ProductionPayments productionId={production.id} crew={crew} />
     </div>
   );
 }

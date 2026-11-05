@@ -35,6 +35,8 @@ const PROFILE_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "subscription_tier", def: "TEXT DEFAULT 'free'" },
   { name: "subscription_status", def: "TEXT DEFAULT 'inactive'" },
   { name: "w9_collected", def: "INTEGER DEFAULT 0" },
+  { name: "connect_charges_enabled", def: "INTEGER DEFAULT 0" },
+  { name: "connect_payouts_enabled", def: "INTEGER DEFAULT 0" },
 ];
 
 const USER_COLUMNS: Array<{ name: string; def: string }> = [
@@ -56,6 +58,22 @@ const PRODUCTION_COLUMNS: Array<{ name: string; def: string }> = [
 ];
 
 const NEW_TABLES = [
+  `CREATE TABLE IF NOT EXISTS production_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id INTEGER NOT NULL REFERENCES productions(id),
+    kind TEXT NOT NULL CHECK(kind IN ('receive', 'pay_crew')),
+    payee_user_id INTEGER NOT NULL REFERENCES users(id),
+    payer_user_id INTEGER REFERENCES users(id),
+    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+    fee_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'usd',
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    stripe_session_id TEXT,
+    stripe_payment_intent_id TEXT,
+    created_at INTEGER NOT NULL,
+    paid_at INTEGER
+  )`,
   `CREATE TABLE IF NOT EXISTS oauth_grants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -384,6 +402,9 @@ const NEW_TABLES = [
 ];
 
 const INDEXES = [
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_production ON production_payments(production_id)",
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_payee ON production_payments(payee_user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_payer ON production_payments(payer_user_id)",
   `CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, read_at)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, recipient_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id)`,

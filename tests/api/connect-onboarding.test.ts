@@ -47,32 +47,36 @@ function member(status: string | null, connect = true) {
 const complete = (session: string) =>
   fetch(`${baseUrl}/api/stripe/onboarding-complete`, { method: "POST", headers: { Authorization: `Bearer ${session}` } });
 
+const flags = (userId: number) => {
+  const p = storage.getProfile(userId)!;
+  return { charges: !!p.connectChargesEnabled, payouts: !!p.connectPayoutsEnabled, status: p.subscriptionStatus };
+};
+
 describe("POST /api/stripe/onboarding-complete", () => {
-  it("does not activate a member who never started onboarding", async () => {
+  it("does nothing for a member who never started onboarding", async () => {
     const { user, session } = member(null, false);
     expect((await complete(session)).status).toBe(400);
-    expect(storage.getProfile(user.id)?.subscriptionStatus).not.toBe("active");
+    expect(flags(user.id)).toMatchObject({ charges: false, payouts: false });
   });
 
-  it("stays onboarding while Stripe says the account is not ready", async () => {
-    const { user, session } = member("onboarding");
+  it("stays not-ready while Stripe says the account is incomplete", async () => {
+    const { user, session } = member("inactive");
     vi.spyOn(stripe.accounts, "retrieve").mockResolvedValue({ charges_enabled: true, payouts_enabled: false } as any);
-    const body = await (await complete(session)).json();
-    expect(body.onboardingComplete).toBe(false);
-    expect(storage.getProfile(user.id)?.subscriptionStatus).toBe("onboarding");
+    expect((await (await complete(session)).json()).onboardingComplete).toBe(false);
+    expect(flags(user.id)).toMatchObject({ charges: true, payouts: false });
   });
 
-  it("activates only when Stripe confirms charges and payouts", async () => {
-    const { user, session } = member("onboarding");
+  it("is ready only when Stripe confirms charges and payouts", async () => {
+    const { user, session } = member("inactive");
     vi.spyOn(stripe.accounts, "retrieve").mockResolvedValue({ charges_enabled: true, payouts_enabled: true } as any);
     expect((await (await complete(session)).json()).onboardingComplete).toBe(true);
-    expect(storage.getProfile(user.id)?.subscriptionStatus).toBe("active");
+    expect(flags(user.id)).toMatchObject({ charges: true, payouts: true });
   });
 
-  it("does not overwrite a subscription's own status", async () => {
-    const { user, session } = member("canceled");
+  it("never touches the subscription status", async () => {
+    const { user, session } = member("active");
     vi.spyOn(stripe.accounts, "retrieve").mockResolvedValue({ charges_enabled: true, payouts_enabled: true } as any);
     await complete(session);
-    expect(storage.getProfile(user.id)?.subscriptionStatus).toBe("canceled");
+    expect(flags(user.id).status).toBe("active");
   });
 });

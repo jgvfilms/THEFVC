@@ -31,7 +31,6 @@ export async function createStripeConnectAccount(userId: number, email: string):
 
   storage.updateProfileSubscription(userId, {
     stripeConnectAccountId: encryptSensitive(account.id),
-    subscriptionStatus: "onboarding",
   });
 
   return account.id;
@@ -57,18 +56,19 @@ export async function createAccountLink(
 }
 
 /**
- * Ask Stripe whether a connected account can take charges and receive payouts,
- * and record the answer. Returns whether onboarding is finished. It only moves a
- * member who is still "onboarding": subscription_status is shared with the
- * subscription flow, and a Connect check must not overwrite "active"/"canceled"
- * that came from a subscription.
+ * Record whether a connected account can take charges and receive payouts.
+ * Stripe is the only authority: this is called with an Account object it sent
+ * (webhook) or that we just fetched from it, never with client-supplied facts.
  */
+export function recordConnectCapabilities(userId: number, account: Pick<Stripe.Account, "charges_enabled" | "payouts_enabled">): boolean {
+  const charges = !!account.charges_enabled;
+  const payouts = !!account.payouts_enabled;
+  storage.updateProfileSubscription(userId, { connectChargesEnabled: charges, connectPayoutsEnabled: payouts });
+  return charges && payouts;
+}
+
 export async function syncConnectOnboarding(userId: number, accountId: string): Promise<boolean> {
-  const account = await stripe.accounts.retrieve(accountId);
-  const ready = !!(account.charges_enabled && account.payouts_enabled);
-  const current = storage.getProfile(userId)?.subscriptionStatus;
-  if (ready && current === "onboarding") storage.updateProfileSubscription(userId, { subscriptionStatus: "active" });
-  return ready;
+  return recordConnectCapabilities(userId, await stripe.accounts.retrieve(accountId));
 }
 
 /**
@@ -234,14 +234,8 @@ async function routeStripeEvent(event: Stripe.Event): Promise<void> {
 
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
-      // Update profile flags based on account capabilities
       const profile = storage.getProfileByStripeAccountId(account.id);
-      if (profile) {
-        storage.updateProfileSubscription(profile.userId, {
-          subscriptionStatus:
-            account.charges_enabled && account.payouts_enabled ? "active" : "onboarding",
-        });
-      }
+      if (profile) recordConnectCapabilities(profile.userId, account);
       break;
     }
 

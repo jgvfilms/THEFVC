@@ -85,6 +85,10 @@ export const profiles = sqliteTable("profiles", {
   subscriptionTier: text("subscription_tier").default("free"), // free | pro | pro_plus
   subscriptionStatus: text("subscription_status").default("inactive"), // inactive | active | past_due | canceled
   w9Collected: integer("w9_collected", { mode: "boolean" }).default(false),
+  // Connect readiness lives here, not in subscription_status: that column belongs
+  // to the subscription flow and Connect used to overwrite it.
+  connectChargesEnabled: integer("connect_charges_enabled", { mode: "boolean" }).default(false),
+  connectPayoutsEnabled: integer("connect_payouts_enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -689,6 +693,30 @@ export type OAuthClientRow = typeof oauthClients.$inferSelect;
 export type OAuthPendingRow = typeof oauthPending.$inferSelect;
 export type OAuthCodeRow = typeof oauthCodes.$inferSelect;
 export type OAuthRefreshRow = typeof oauthRefreshTokens.$inferSelect;
+
+// ===== PRODUCTION PAYMENTS (Stripe Connect) =====
+// A payment tied to a production, paid to a member's own Stripe account (direct
+// charge), so the member is the merchant and FVC only takes the platform fee.
+//  - receive: the production owner is paid (payer is anyone with the link)
+//  - pay_crew: the production owner pays a crew member
+export const productionPayments = sqliteTable("production_payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  productionId: integer("production_id").notNull().references(() => productions.id),
+  kind: text("kind").notNull(), // receive | pay_crew
+  payeeUserId: integer("payee_user_id").notNull().references(() => users.id),
+  payerUserId: integer("payer_user_id").references(() => users.id), // NULL = anyone with the link
+  amountCents: integer("amount_cents").notNull(),
+  feeCents: integer("fee_cents").notNull(),
+  currency: text("currency").notNull().default("usd"),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"), // pending | paid | canceled
+  stripeSessionId: text("stripe_session_id"),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  paidAt: integer("paid_at", { mode: "timestamp" }),
+});
+
+export type ProductionPayment = typeof productionPayments.$inferSelect;
 
 // ===== MEMBER MESSAGES =====
 // One row per message; a "conversation" is just the pair of members, so there is
