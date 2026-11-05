@@ -221,7 +221,12 @@ When you're ready for real money:
    go-live mistake
 4. Re-check the reminder settings from Part 3; they're per-mode too
 5. Update the Railway variables, redeploy
-6. Send one small real invoice to yourself and pay it before sending any to
+6. **Clear the test-mode Stripe IDs** with `script/reset-stripe-test-ids.cjs`
+   (dry run first, then `--apply`; it backs the DB up). IDs minted in test
+   mode don't exist in live, so a member with a stored test customer ID would
+   fail with "No such customer". Run it right after the key swap, before any
+   invoice is sent. Run it where `DATABASE_PATH` points at the production DB
+7. Send one small real invoice to yourself and pay it before sending any to
    members
 
 **Costs:** Stripe Invoicing Starter is 0.4% of each paid invoice, plus standard
