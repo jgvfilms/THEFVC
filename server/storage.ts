@@ -7,7 +7,7 @@ import {
   notifications,
   subscriptionTiers, payments, w9Forms,
   invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
-  mcpTokens, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
+  mcpTokens, messages, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -34,7 +34,7 @@ import type {
   InvoiceLineItem, InsertInvoiceLineItem,
   InvoiceReminder, InsertInvoiceReminder,
   InvoiceEvent, InsertInvoiceEvent,
-  McpToken, InsertMcpToken,
+  McpToken, InsertMcpToken, Message,
   OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow, OAuthGrantRow,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -102,6 +102,11 @@ export interface IStorage {
   revokeOAuthGrant(id: number): void;
   listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }>;
   purgeExpiredOAuth(): void;
+
+  // Member messages (read side; sending lives in message-routes)
+  listConversations(userId: number): Array<{ otherId: number; last: Message; unread: number }>;
+  getThread(userId: number, otherId: number, limit?: number): Message[];
+  countUnreadMessages(userId: number): number;
 
   // Credits
   getCreditsByProfile(profileId: number): Credit[];
@@ -539,6 +544,38 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     db.delete(oauthPending).where(lt(oauthPending.expiresAt, now)).run();
     db.delete(oauthCodes).where(lt(oauthCodes.expiresAt, now)).run();
+  }
+
+  // ===== MESSAGES (read side) =====
+  // One row per other member, newest first. A conversation is just the pair.
+  listConversations(userId: number) {
+    const rows = db.select().from(messages)
+      .where(or(eq(messages.senderId, userId), eq(messages.recipientId, userId)))
+      .orderBy(desc(messages.createdAt), desc(messages.id)).all();
+    const byOther = new Map<number, { otherId: number; last: Message; unread: number }>();
+    for (const m of rows) {
+      const otherId = m.senderId === userId ? m.recipientId : m.senderId;
+      const entry = byOther.get(otherId) ?? { otherId, last: m, unread: 0 };
+      if (m.recipientId === userId && !m.readAt) entry.unread++;
+      byOther.set(otherId, entry);
+    }
+    return Array.from(byOther.values());
+  }
+
+  // Oldest first. Does not mark anything read: callers decide whether viewing counts.
+  getThread(userId: number, otherId: number, limit?: number): Message[] {
+    const q = db.select().from(messages)
+      .where(or(
+        and(eq(messages.senderId, userId), eq(messages.recipientId, otherId)),
+        and(eq(messages.senderId, otherId), eq(messages.recipientId, userId)),
+      ));
+    if (!limit) return q.orderBy(messages.createdAt, messages.id).all();
+    return q.orderBy(desc(messages.createdAt), desc(messages.id)).limit(limit).all().reverse();
+  }
+
+  countUnreadMessages(userId: number): number {
+    return db.select({ n: sql<number>`count(*)` }).from(messages)
+      .where(and(eq(messages.recipientId, userId), sql`${messages.readAt} IS NULL`)).get()?.n ?? 0;
   }
 
   // ===== CREDITS =====

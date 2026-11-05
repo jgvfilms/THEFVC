@@ -253,6 +253,48 @@ function buildServer(principal: McpPrincipal, meta: { ip?: string; ua?: string }
     );
   }
 
+  // Read-only on purpose: a member sends and replies themselves, and reading over
+  // MCP must not clear the unread badge they rely on. Every read is audit-logged.
+  if (can("messages:read")) {
+    const nameOf = (id: number) => {
+      const u = storage.getUser(id);
+      return { handle: u?.handle ?? null, displayName: (u && storage.getProfile(u.id)?.displayName) || u?.handle || "Former member" };
+    };
+    server.registerTool(
+      "list_conversations",
+      { description: "List your message conversations, newest first, with unread counts and a short preview of the latest message." },
+      async () => {
+        const convos = storage.listConversations(principal.userId).map((c) => ({
+          ...nameOf(c.otherId),
+          unread: c.unread,
+          lastAt: c.last.createdAt,
+          lastFromMe: c.last.senderId === principal.userId,
+          preview: c.last.body.slice(0, 140),
+        }));
+        audit("mcp_messages_list", { conversations: convos.length });
+        return text({ unreadTotal: storage.countUnreadMessages(principal.userId), conversations: convos });
+      },
+    );
+    server.registerTool(
+      "read_conversation",
+      {
+        description: "Read your recent messages with one member, oldest first. Does not mark them as read.",
+        inputSchema: { handle: z.string().min(1).max(64), limit: z.number().int().min(1).max(50).optional() },
+      },
+      async ({ handle, limit }) => {
+        const other = storage.getUserByHandle(handle);
+        // Same answer whether the member is unknown or you simply never talked.
+        const thread = other ? storage.getThread(principal.userId, other.id, limit ?? 20) : [];
+        if (!other || thread.length === 0) return fail("No conversation with that member");
+        audit("mcp_messages_read", { withUserId: other.id, count: thread.length });
+        return text({
+          with: nameOf(other.id),
+          messages: thread.map((m) => ({ from: m.senderId === principal.userId ? "me" : "them", body: m.body, at: m.createdAt, read: !!m.readAt })),
+        });
+      },
+    );
+  }
+
   return server;
 }
 

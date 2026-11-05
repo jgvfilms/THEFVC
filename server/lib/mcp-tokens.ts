@@ -8,6 +8,7 @@ export const MCP_SCOPES = [
   "credits:read",
   "credits:write",
   "page:write",
+  "messages:read",
 ] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
 

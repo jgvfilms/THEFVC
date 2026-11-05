@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, KeyRound, Trash2 } from "lucide-react";
 
-export type Scope = "profile:read" | "profile:write" | "credits:read" | "credits:write" | "page:write";
+export type Scope = "profile:read" | "profile:write" | "credits:read" | "credits:write" | "page:write" | "messages:read";
 
 interface McpTokenView {
   kind: "token" | "app";
@@ -30,6 +30,7 @@ export const SCOPE_OPTIONS: Array<{ id: Scope; label: string; hint: string }> = 
   { id: "credits:read", label: "Read credits", hint: "View your filmography" },
   { id: "credits:write", label: "Manage credits", hint: "Add, edit and delete entries in your filmography" },
   { id: "page:write", label: "Customize page", hint: "Change theme, sections, headline, custom links" },
+  { id: "messages:read", label: "Read messages", hint: "See who messaged you and read your conversations. Cannot send or reply, and never marks messages as read" },
 ];
 
 const EXPIRY_OPTIONS = [

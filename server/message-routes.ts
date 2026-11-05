@@ -7,7 +7,7 @@
  */
 import type { Express, Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { messages } from "@shared/schema";
 import { requireAuth, type AuthedRequest } from "./middleware/auth";
@@ -83,22 +83,8 @@ export function registerMessageRoutes(app: Express) {
 
   // Conversation list: one row per other member, newest first, with unread count.
   app.get("/api/messages", requireAuth, (req: AuthedRequest, res: Response) => {
-    const me = req.userId!;
-    const rows = db
-      .select()
-      .from(messages)
-      .where(or(eq(messages.senderId, me), eq(messages.recipientId, me)))
-      .orderBy(desc(messages.createdAt), desc(messages.id))
-      .all();
-    const byOther = new Map<number, { otherId: number; last: typeof rows[number]; unread: number }>();
-    for (const m of rows) {
-      const otherId = m.senderId === me ? m.recipientId : m.senderId;
-      const entry = byOther.get(otherId) ?? { otherId, last: m, unread: 0 };
-      if (m.recipientId === me && !m.readAt) entry.unread++;
-      byOther.set(otherId, entry);
-    }
     res.json(
-      Array.from(byOther.values()).map((c) => {
+      storage.listConversations(req.userId!).map((c) => {
         const other = storage.getUser(c.otherId);
         return {
           handle: other?.handle ?? null,
@@ -112,12 +98,7 @@ export function registerMessageRoutes(app: Express) {
   });
 
   app.get("/api/messages/unread-count", requireAuth, (req: AuthedRequest, res: Response) => {
-    const n = db
-      .select({ n: sql<number>`count(*)` })
-      .from(messages)
-      .where(and(eq(messages.recipientId, req.userId!), isNull(messages.readAt)))
-      .get()?.n ?? 0;
-    res.json({ unread: n });
+    res.json({ unread: storage.countUnreadMessages(req.userId!) });
   });
 
   // Opening a conversation marks what the other member sent as read.
@@ -126,17 +107,7 @@ export function registerMessageRoutes(app: Express) {
     const handle = Array.isArray(req.params.handle) ? req.params.handle[0] : req.params.handle;
     const other = storage.getUserByHandle(handle);
     if (!other) return res.status(404).json({ error: "Member not found." });
-    const thread = db
-      .select()
-      .from(messages)
-      .where(
-        or(
-          and(eq(messages.senderId, me), eq(messages.recipientId, other.id)),
-          and(eq(messages.senderId, other.id), eq(messages.recipientId, me)),
-        ),
-      )
-      .orderBy(messages.createdAt, messages.id)
-      .all();
+    const thread = storage.getThread(me, other.id);
     db.update(messages)
       .set({ readAt: new Date() })
       .where(and(eq(messages.senderId, other.id), eq(messages.recipientId, me), isNull(messages.readAt)))

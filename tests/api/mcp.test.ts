@@ -25,7 +25,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  for (const table of ["mcp_tokens", "credits", "security_audit_log", "profiles", "sessions", "users"]) {
+  for (const table of ["messages", "mcp_tokens", "credits", "security_audit_log", "profiles", "sessions", "users"]) {
     try {
       db.run(`DELETE FROM ${table}`);
     } catch {
@@ -292,5 +292,62 @@ describe("profile PATCH pageConfig", () => {
     const ok = JSON.stringify({ sections: [{ id: "work", visible: false }], headline: "Hi", customLinks: [] });
     expect((await patch(sessionToken, ok)).status).toBe(200);
     expect(storage.getProfile(user.id)!.pageConfig).toBe(ok);
+  });
+});
+
+describe("messages:read", () => {
+  const send = (from: number, to: number, body: string, readAt: Date | null = null) =>
+    db.run(`INSERT INTO messages (sender_id, recipient_id, body, read_at, created_at) VALUES (${from}, ${to}, '${body}', ${readAt ? Math.floor(readAt.getTime() / 1000) : "NULL"}, ${Math.floor(Date.now() / 1000)})`);
+
+  it("is opt-in: a token without the scope sees no message tools", async () => {
+    const { user } = makeMember("nomsg");
+    const { token } = issueMcpToken({ userId: user.id, name: "t", scopes: ALL });
+    const client = await connect(token);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("list_conversations");
+    expect(names).not.toContain("read_conversation");
+  });
+
+  it("lists and reads own conversations without marking them read, and logs the access", async () => {
+    const me = makeMember("me1").user;
+    const bob = makeMember("bob1").user;
+    const eve = makeMember("eve1").user;
+    send(bob.id, me.id, "hello from bob");
+    send(me.id, bob.id, "hi bob");
+    send(bob.id, eve.id, "private to eve");
+    const { token } = issueMcpToken({ userId: me.id, name: "t", scopes: ["messages:read"] });
+    const client = await connect(token);
+
+    const list = JSON.parse((await callText(client, "list_conversations")).text);
+    expect(list.conversations).toHaveLength(1);
+    expect(list.conversations[0]).toMatchObject({ handle: "bob1", lastFromMe: true });
+
+    const thread = JSON.parse((await callText(client, "read_conversation", { handle: "bob1" })).text);
+    expect(thread.messages.map((m: any) => m.body)).toEqual(["hello from bob", "hi bob"]);
+    expect(storage.countUnreadMessages(me.id)).toBe(1); // reading over MCP leaves the badge alone
+
+    expect(JSON.stringify(thread)).not.toContain("private to eve");
+    const log = JSON.stringify(db.all("SELECT action FROM security_audit_log" as any));
+    expect(log).toContain("mcp_messages_read");
+  });
+
+  it("answers the same for an unknown member and one you never talked to", async () => {
+    const me = makeMember("me2").user;
+    const bob = makeMember("bob2").user;
+    const eve = makeMember("eve2").user;
+    send(bob.id, eve.id, "not for me");
+    const { token } = issueMcpToken({ userId: me.id, name: "t", scopes: ["messages:read"] });
+    const client = await connect(token);
+    const a = await callText(client, "read_conversation", { handle: "bob2" });
+    const b = await callText(client, "read_conversation", { handle: "ghost" });
+    expect(a).toEqual(b);
+    expect(a.isError).toBe(true);
+  });
+
+  it("offers no way to send", async () => {
+    const { user } = makeMember("me3");
+    const { token } = issueMcpToken({ userId: user.id, name: "t", scopes: ["messages:read"] });
+    const names = (await (await connect(token)).listTools()).tools.map((t) => t.name);
+    expect(names.filter((n) => /send|reply|message/i.test(n))).toEqual([]);
   });
 });

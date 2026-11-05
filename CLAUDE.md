@@ -130,6 +130,10 @@ Invariants (covered by `tests/api/mcp.test.ts` and `oauth.test.ts`):
   personal tokens count toward the 10-token limit.
 - **Scopes default to read-only** (`profile:read`, `credits:read`) when a client
   asks for none; writes must be requested and approved.
+- **`messages:read` is opt-in and read-only.** Never in the default scopes, no
+  send/reply tool exists, reading over MCP does not mark messages read, and
+  every read is audit-logged. An unknown member and a never-talked-to member
+  get the same answer.
 - **OAuth endpoint throttles are raised SDK limits, not `rateLimit()`.**
   claude.ai shares egress IPs, and `rateLimit()` writes site-wide IP blocks.
 - **Upgrading**: `upgradeOAuthTables()` in `migrate.ts` adds the grant columns
