@@ -54,7 +54,10 @@ app.use(express.urlencoded({ extended: false }));
 // Apply security middleware
 app.use(securityHeaders);
 app.use(sanitize);
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100, identifier: "global" }));
+// API only: counting the SPA's JS/image/upload requests let a few normal page
+// loads trip 100/15min and block the whole site for an hour. Route-level
+// limiters (login, payments, Stripe...) stay strict.
+app.use("/api", rateLimit({ windowMs: 15 * 60 * 1000, max: 600, identifier: "global" }));
 
 // Start background job scheduler
 startJobScheduler();
