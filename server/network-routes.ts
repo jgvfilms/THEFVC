@@ -13,6 +13,8 @@ import { db, storage } from "./storage";
 import { follows, memberConnections, memberBlocks, activityFeed, feedPosts, type User } from "@shared/schema";
 import { requireAuth, type AuthedRequest } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
+import { deliverMessage, MAX_MESSAGE_LENGTH } from "./message-routes";
+import { z } from "zod";
 
 const param = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
@@ -27,6 +29,14 @@ export function isBlockedEitherWay(a: number, b: number): boolean {
     ))
     .get();
 }
+
+/** True when the two members have an accepted connection. */
+export function areConnected(a: number, b: number): boolean {
+  return findConnection(a, b)?.status === "accepted";
+}
+
+// Built per call: message-routes and this file import each other, so the constant is not ready at load.
+const connectSchema = () => z.object({ message: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH) });
 
 function findConnection(a: number, b: number) {
   return db
@@ -134,20 +144,29 @@ export function registerNetworkRoutes(app: Express) {
   });
 
   // ----- Connect -----
-  app.post("/api/network/connect/:handle", requireAuth, (req: AuthedRequest, res: Response) => {
+  // A new request must carry a message: it is delivered as an ordinary direct
+  // message so the recipient sees who is asking and why. Accepting an incoming
+  // request (counter-request) needs no message.
+  app.post("/api/network/connect/:handle", requireAuth, async (req: AuthedRequest, res: Response) => {
     const other = resolveTarget(req, res);
     if (!other) return;
     const me = req.userId!;
-    const myHandle = storage.getUser(me)!.handle;
+    const sender = storage.getUser(me)!;
     const existing = findConnection(me, other.id);
     if (!existing) {
-      db.insert(memberConnections).values({ requesterId: me, addresseeId: other.id }).run();
-      notify(other.id, "connection_request", `${myName(me)} wants to connect`, myHandle);
+      const parsed = connectSchema().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Include a message of 1 to 2000 characters with your request.", code: "message_required" });
+      }
+      const sent = await deliverMessage(sender, other, parsed.data.message);
+      if (!sent.ok) return res.status(sent.status).json({ error: sent.error });
+      db.insert(memberConnections).values({ requesterId: me, addresseeId: other.id }).onConflictDoNothing().run();
+      notify(other.id, "connection_request", `${myName(me)} wants to connect`, sender.handle);
     } else if (existing.status === "pending" && existing.addresseeId === me) {
       // They already asked us: asking back is the same as accepting.
       db.update(memberConnections).set({ status: "accepted", respondedAt: new Date() })
         .where(eq(memberConnections.id, existing.id)).run();
-      notify(other.id, "connection_accepted", `${myName(me)} accepted your connection`, myHandle);
+      notify(other.id, "connection_accepted", `${myName(me)} accepted your connection`, sender.handle);
     }
     res.json(relationship(me, other.id));
   });

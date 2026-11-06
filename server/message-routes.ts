@@ -9,7 +9,7 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db, storage } from "./storage";
-import { messages } from "@shared/schema";
+import { messages, type Message, type User } from "@shared/schema";
 import { requireAuth, type AuthedRequest } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
 import { isBlockedEitherWay } from "./network-routes";
@@ -28,6 +28,58 @@ function baseUrl(): string {
   return process.env.PUBLIC_BASE_URL || "https://www.thefvc.is";
 }
 
+/**
+ * Store a message and notify the recipient. Shared by the inbox and by Connect
+ * requests, so both obey the same daily cap and block rules. Callers have
+ * already validated the body and that the recipient is an active member.
+ */
+export async function deliverMessage(
+  sender: User,
+  recipient: User,
+  body: string,
+): Promise<{ ok: true; message: Message } | { ok: false; status: number; error: string }> {
+  // A block in either direction looks the same as an unknown member. Existing threads stay readable.
+  if (isBlockedEitherWay(sender.id, recipient.id)) return { ok: false, status: 404, error: "Member not found." };
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sentToday = db
+    .select({ n: sql<number>`count(*)` })
+    .from(messages)
+    .where(and(eq(messages.senderId, sender.id), gt(messages.createdAt, since)))
+    .get()?.n ?? 0;
+  if (sentToday >= MAX_MESSAGES_PER_DAY) {
+    return { ok: false, status: 429, error: "Daily message limit reached. Try again tomorrow." };
+  }
+
+  const message = db
+    .insert(messages)
+    .values({ senderId: sender.id, recipientId: recipient.id, body })
+    .returning()
+    .get();
+
+  const senderName = storage.getProfile(sender.id)?.displayName || sender.handle;
+  storage.createNotification({
+    userId: recipient.id,
+    type: "message",
+    title: `New message from ${senderName}`,
+    message: null,
+    linkUrl: "/app/messages",
+    metadata: JSON.stringify({ messageId: message.id, fromHandle: sender.handle }),
+  } as any);
+
+  if (recipient.emailOnMessage !== false) {
+    const recipientName = storage.getProfile(recipient.id)?.displayName || recipient.handle;
+    const tpl = newMessageTemplate({ recipientName, senderName, inboxUrl: `${baseUrl()}/app/messages` });
+    try {
+      await queueEmail({ to: recipient.email, ...tpl, metadata: { type: "new_message", userId: recipient.id } });
+    } catch (err) {
+      // The message is saved and the in-app notice exists; a mail failure must not fail the send.
+      console.error("[messages] could not queue notification email", err);
+    }
+  }
+  return { ok: true, message };
+}
+
 export function registerMessageRoutes(app: Express) {
   app.use("/api/messages", rateLimit({ windowMs: 60 * 1000, max: 60, identifier: "messages" }));
 
@@ -42,46 +94,10 @@ export function registerMessageRoutes(app: Express) {
       return res.status(404).json({ error: "Member not found." });
     }
     if (recipient.id === sender.id) return res.status(400).json({ error: "You can't message yourself." });
-    // A block in either direction looks the same as an unknown member. Existing threads stay readable.
-    if (isBlockedEitherWay(sender.id, recipient.id)) return res.status(404).json({ error: "Member not found." });
 
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const sentToday = db
-      .select({ n: sql<number>`count(*)` })
-      .from(messages)
-      .where(and(eq(messages.senderId, sender.id), gt(messages.createdAt, since)))
-      .get()?.n ?? 0;
-    if (sentToday >= MAX_MESSAGES_PER_DAY) {
-      return res.status(429).json({ error: "Daily message limit reached. Try again tomorrow." });
-    }
-
-    const message = db
-      .insert(messages)
-      .values({ senderId: sender.id, recipientId: recipient.id, body: parsed.data.body })
-      .returning()
-      .get();
-
-    const senderName = storage.getProfile(sender.id)?.displayName || sender.handle;
-    storage.createNotification({
-      userId: recipient.id,
-      type: "message",
-      title: `New message from ${senderName}`,
-      message: null,
-      linkUrl: "/app/messages",
-      metadata: JSON.stringify({ messageId: message.id, fromHandle: sender.handle }),
-    } as any);
-
-    if (recipient.emailOnMessage !== false) {
-      const recipientName = storage.getProfile(recipient.id)?.displayName || recipient.handle;
-      const tpl = newMessageTemplate({ recipientName, senderName, inboxUrl: `${baseUrl()}/app/messages` });
-      try {
-        await queueEmail({ to: recipient.email, ...tpl, metadata: { type: "new_message", userId: recipient.id } });
-      } catch (err) {
-        // The message is saved and the in-app notice exists; a mail failure must not fail the send.
-        console.error("[messages] could not queue notification email", err);
-      }
-    }
-    res.status(201).json({ id: message.id, createdAt: message.createdAt });
+    const sent = await deliverMessage(sender, recipient, parsed.data.body);
+    if (!sent.ok) return res.status(sent.status).json({ error: sent.error });
+    res.status(201).json({ id: sent.message.id, createdAt: sent.message.createdAt });
   });
 
   // Conversation list: one row per other member, newest first, with unread count.

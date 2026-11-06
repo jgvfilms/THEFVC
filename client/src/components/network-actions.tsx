@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequestJson } from "@/lib/queryClient";
+import { useState } from "react";
+import { apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -35,14 +36,14 @@ export function useNetworkMutation(handle: string) {
   const qc = useQueryClient();
   const { toast } = useToast();
   return useMutation({
-    mutationFn: ({ method, path }: { method: string; path: string }) =>
-      apiRequestJson<Status>(method, `/api/network/${path}/${encodeURIComponent(handle)}`),
+    mutationFn: ({ method, path, body }: { method: string; path: string; body?: unknown }) =>
+      apiRequestJson<Status>(method, `/api/network/${path}/${encodeURIComponent(handle)}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/network"] });
       qc.invalidateQueries({ queryKey: ["/api/network/status", handle] });
       qc.invalidateQueries({ queryKey: ["/api/network/feed"] });
     },
-    onError: () => toast({ title: "That didn't work. Try again.", variant: "destructive" }),
+    onError: (err) => toast({ title: parseApiErrorMessage(err, "That didn't work. Try again."), variant: "destructive" }),
   });
 }
 
@@ -55,6 +56,8 @@ export function NetworkActions({ handle }: { handle: string }) {
     enabled: !!user,
   });
   const act = useNetworkMutation(handle);
+  const [composing, setComposing] = useState(false);
+  const [message, setMessage] = useState("");
   if (!user || !data || data.self) return null;
   const run = (method: string, path: string) => act.mutate({ method, path });
   const busy = act.isPending;
@@ -79,7 +82,7 @@ export function NetworkActions({ handle }: { handle: string }) {
         {data.following ? "Following ✓" : "Follow"}
       </button>
       {data.connection === "none" && (
-        <button className="btn btn-ghost" disabled={busy} onClick={() => run("POST", "connect")} data-testid="button-connect">
+        <button className="btn btn-ghost" disabled={busy} onClick={() => setComposing((v) => !v)} data-testid="button-connect">
           Connect
         </button>
       )}
@@ -99,6 +102,33 @@ export function NetworkActions({ handle }: { handle: string }) {
       <button className="btn btn-ghost" disabled={busy} onClick={() => run("POST", "block")} data-testid="button-block">
         Block
       </button>
+      {composing && data.connection === "none" && (
+        <form
+          style={{ flexBasis: "100%" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            act.mutate(
+              { method: "POST", path: "connect", body: { message } },
+              { onSuccess: () => { setComposing(false); setMessage(""); } },
+            );
+          }}
+          data-testid="form-connect"
+        >
+          <label className="label" htmlFor="connect-message">Say why you want to connect. They'll get this as a message.</label>
+          <textarea
+            id="connect-message"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            maxLength={2000}
+            rows={3}
+            style={{ display: "block", width: "100%", margin: "8px 0" }}
+            data-testid="input-connect-message"
+          />
+          <button className="btn btn-primary" type="submit" disabled={busy || !message.trim()} data-testid="button-send-request">
+            Send request
+          </button>
+        </form>
+      )}
     </>
   );
 }

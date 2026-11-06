@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequestJson, assetUrl, getAuthToken } from "@/lib/queryClient";
+import { apiRequestJson, assetUrl, getAuthToken, parseApiErrorMessage } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConnectionPicker } from "@/components/network-actions";
 import { Button } from "@/components/ui/button";
@@ -100,8 +100,8 @@ export function ProductionDetail() {
       setCrewRole("");
       setCrewRate("");
     },
-    onError: () => {
-      toast({ title: "Failed to add crew member", variant: "destructive" });
+    onError: (err) => {
+      toast({ title: parseApiErrorMessage(err, "Failed to add crew member"), variant: "destructive" });
     },
   });
 
@@ -299,7 +299,7 @@ export function ProductionDetail() {
               <Input
                 value={crewHandle}
                 onChange={(e) => setCrewHandle(e.target.value)}
-                placeholder="@handle"
+                placeholder="@handle (must be a connection)"
                 className="flex-1"
                 data-testid="input-crew-handle"
               />

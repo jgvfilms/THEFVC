@@ -14,7 +14,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   for (const t of [
-    "follows", "member_connections", "member_blocks", "messages", "email_queue",
+    "production_crew", "productions", "follows", "member_connections", "member_blocks", "messages", "email_queue",
     "notifications", "activity_feed", "feed_posts", "profiles", "sessions", "users",
   ]) db.run(`DELETE FROM ${t}`);
 });
@@ -66,7 +66,7 @@ describe("follow", () => {
     makeMember("hidden", { isPublic: false });
     expect((await call(a.token, "POST", "/api/network/follow/alice")).status).toBe(404);
     expect((await call(a.token, "POST", "/api/network/follow/hidden")).status).toBe(404);
-    expect((await call(a.token, "POST", "/api/network/connect/hidden")).status).toBe(404);
+    expect((await call(a.token, "POST", "/api/network/connect/hidden", { message: "Let\'s work together" })).status).toBe(404);
     expect((await call(a.token, "POST", "/api/network/follow/nobody")).status).toBe(404);
     expect((await fetch(`${baseUrl}/api/network`)).status).toBe(401);
   });
@@ -93,10 +93,10 @@ describe("connect", () => {
     const b = makeMember("bob");
     const m = makeMember("eve");
 
-    const req = await (await call(a.token, "POST", "/api/network/connect/bob")).json();
+    const req = await (await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" })).json();
     expect(req.connection).toBe("pending_out");
     // Asking twice stays one row.
-    await call(a.token, "POST", "/api/network/connect/bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
     expect(db.all("SELECT * FROM member_connections")).toHaveLength(1);
 
     // Bob sees it as incoming; alice and a third party cannot accept it.
@@ -114,8 +114,8 @@ describe("connect", () => {
   it("treats a counter-request as acceptance", async () => {
     const a = makeMember("alice");
     const b = makeMember("bob");
-    await call(a.token, "POST", "/api/network/connect/bob");
-    const r = await (await call(b.token, "POST", "/api/network/connect/alice")).json();
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
+    const r = await (await call(b.token, "POST", "/api/network/connect/alice", { message: "Let\'s work together" })).json();
     expect(r.connection).toBe("connected");
     expect(db.all("SELECT * FROM member_connections")).toHaveLength(1);
   });
@@ -123,16 +123,16 @@ describe("connect", () => {
   it("supports decline, cancel and disconnect from either side", async () => {
     const a = makeMember("alice");
     const b = makeMember("bob");
-    await call(a.token, "POST", "/api/network/connect/bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
     // Addressee cannot "cancel" the requester's request via DELETE; they decline.
     await call(b.token, "DELETE", "/api/network/connect/alice");
     expect(db.all("SELECT * FROM member_connections")).toHaveLength(1);
     expect((await (await call(b.token, "POST", "/api/network/requests/alice/decline")).json()).connection).toBe("none");
 
-    await call(a.token, "POST", "/api/network/connect/bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
     expect((await (await call(a.token, "DELETE", "/api/network/connect/bob")).json()).connection).toBe("none");
 
-    await call(a.token, "POST", "/api/network/connect/bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
     await call(b.token, "POST", "/api/network/requests/alice/accept");
     expect((await (await call(b.token, "DELETE", "/api/network/connect/alice")).json()).connection).toBe("none");
   });
@@ -144,14 +144,14 @@ describe("block", () => {
     const b = makeMember("bob");
     await call(a.token, "POST", "/api/network/follow/bob");
     await call(b.token, "POST", "/api/network/follow/alice");
-    await call(a.token, "POST", "/api/network/connect/bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Let\'s work together" });
     await call(b.token, "POST", "/api/network/requests/alice/accept");
 
     const r = await (await call(a.token, "POST", "/api/network/block/bob")).json();
     expect(r).toMatchObject({ blocked: true, following: false, followedBy: false, connection: "none" });
 
     expect((await call(b.token, "POST", "/api/network/follow/alice")).status).toBe(404);
-    expect((await call(b.token, "POST", "/api/network/connect/alice")).status).toBe(404);
+    expect((await call(b.token, "POST", "/api/network/connect/alice", { message: "Let\'s work together" })).status).toBe(404);
     expect((await call(b.token, "POST", "/api/messages", { toHandle: "alice", body: "hi" })).status).toBe(404);
     expect((await call(a.token, "POST", "/api/messages", { toHandle: "bob", body: "hi" })).status).toBe(404);
 
@@ -165,7 +165,77 @@ describe("block", () => {
   });
 });
 
-describe("messaging and crew stay open without a connection", () => {
+describe("connect requires a message", () => {
+  it("rejects a request with no message and creates nothing", async () => {
+    const a = makeMember("alice");
+    makeMember("bob");
+    for (const body of [undefined, { message: "" }, { message: "   " }]) {
+      const r = await call(a.token, "POST", "/api/network/connect/bob", body);
+      expect(r.status).toBe(400);
+      expect((await r.json()).code).toBe("message_required");
+    }
+    expect(db.all("SELECT * FROM member_connections")).toHaveLength(0);
+    expect(db.all("SELECT * FROM messages")).toHaveLength(0);
+  });
+
+  it("delivers the message as a direct message with the request", async () => {
+    const a = makeMember("alice");
+    const b = makeMember("bob");
+    await call(a.token, "POST", "/api/network/connect/bob", { message: "Need a DP for June" });
+    const thread = await (await call(b.token, "GET", "/api/messages/with/alice")).json();
+    expect(thread.map((m: any) => m.body)).toEqual(["Need a DP for June"]);
+    expect(db.all(`SELECT * FROM notifications WHERE user_id = ${b.user.id} AND type = 'connection_request'`)).toHaveLength(1);
+  });
+
+  it("does not create the request if the message can't be sent (blocked)", async () => {
+    const a = makeMember("alice");
+    const b = makeMember("bob");
+    await call(b.token, "POST", "/api/network/block/alice");
+    expect((await call(a.token, "POST", "/api/network/connect/bob", { message: "hi" })).status).toBe(404);
+    expect(db.all("SELECT * FROM member_connections")).toHaveLength(0);
+  });
+});
+
+describe("adding crew requires a connection", () => {
+  function production(ownerId: number) {
+    return storage.createProduction({ creatorId: ownerId, title: "Test Film", type: "short", status: "development" } as any);
+  }
+  const addCrew = (token: string, prodId: number, profileId: number) =>
+    call(token, "POST", `/api/productions/${prodId}/crew`, { profileId, role: "DP", status: "invited" });
+
+  it("refuses an unconnected member, allows a connection and yourself", async () => {
+    const owner = makeMember("owner");
+    const bob = makeMember("bob");
+    const prod = production(owner.user.id);
+    const bobProfile = storage.getProfile(bob.user.id)!;
+    const ownerProfile = storage.getProfile(owner.user.id)!;
+
+    const denied = await addCrew(owner.token, prod.id, bobProfile.id);
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).code).toBe("not_connected");
+
+    // A pending request is not enough.
+    await call(owner.token, "POST", "/api/network/connect/bob", { message: "join us" });
+    expect((await addCrew(owner.token, prod.id, bobProfile.id)).status).toBe(403);
+
+    await call(bob.token, "POST", "/api/network/requests/owner/accept");
+    expect((await addCrew(owner.token, prod.id, bobProfile.id)).status).toBe(201);
+    expect((await addCrew(owner.token, prod.id, ownerProfile.id)).status).toBe(201);
+    expect((await addCrew(owner.token, prod.id, 99999)).status).toBe(404);
+  });
+
+  it("leaves crew already on a production alone after a disconnect", async () => {
+    const owner = makeMember("owner");
+    const bob = makeMember("bob");
+    const prod = production(owner.user.id);
+    const bobProfile = storage.getProfile(bob.user.id)!;
+    storage.addCrewMember({ productionId: prod.id, profileId: bobProfile.id, role: "DP", status: "confirmed" } as any);
+    const crew = await (await call(owner.token, "GET", `/api/productions/${prod.id}/crew`)).json();
+    expect(crew).toHaveLength(1);
+  });
+});
+
+describe("messaging stays open without a connection", () => {
   it("lets strangers message each other as before", async () => {
     const a = makeMember("alice");
     makeMember("bob");

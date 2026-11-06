@@ -72,7 +72,7 @@ export function NetworkPage() {
     <div className="mx-auto w-full max-w-2xl p-4 md:p-6 flex flex-col gap-4" data-testid="network-page">
       <h1 className="font-display text-2xl font-semibold">My Network</h1>
       <p className="text-sm text-muted-foreground">
-        Follow members to see their activity on your dashboard. Connect to build your trusted crew; connected members appear as a shortcut when you add crew to a production.
+        Follow members to see their activity on your dashboard. Connect (with a message) to work together: you can only add connected members to a production.
       </p>
       <Section id="incoming" title="Connection requests" members={data.incoming} empty="No pending requests."
         actions={(m) => [A("accept", "Accept", "POST", "requests/:h/accept", m.handle, "default"), A("decline", "Decline", "POST", "requests/:h/decline", m.handle)]} />

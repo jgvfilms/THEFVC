@@ -181,11 +181,16 @@ dashboard feed. Covered by `tests/api/network.test.ts`.
 - **Connect is request then accept**, one `member_connections` row per pair
   (unique index). A counter-request auto-accepts. Only the addressee can
   accept/decline; either side can disconnect; only the requester can cancel.
-- **Messaging and crew-adding are deliberately NOT gated by Connect**
-  (existing conversations and productions keep working). Connect adds a
-  one-click picker on Add Crew. If hiring is ever gated, gate new behaviour only.
+- **A new Connect request must carry a message** (1-2000 chars). It is sent
+  through `deliverMessage()` (same daily cap, block rules and email as the
+  inbox), then the pending row is created; if the send fails no request exists.
+  Accepting an incoming request (counter-request) needs no message.
+- **Adding crew requires an accepted connection** (or yourself):
+  `POST /api/productions/:id/crew` returns 403 `not_connected` otherwise. Only
+  new adds are checked; crew already on a production, payments and existing
+  conversations are untouched. Messaging itself is still open to any member.
 - **Block** deletes follows and connections both ways in one transaction and
-  makes new messages 404 (existing threads stay readable). Follow, connect and
+  makes new messages (and Connect requests) 404 (existing threads stay readable). Follow, connect and
   block-affected lookups all answer a single "Member not found" so handles,
   private profiles and blocks can't be probed.
 - **No follow/connect to yourself or to a private profile** (`profiles.isPublic

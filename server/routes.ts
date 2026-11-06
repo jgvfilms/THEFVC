@@ -28,7 +28,7 @@ import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
 import { registerMcpRoutes } from "./mcp-routes";
 import { registerMessageRoutes } from "./message-routes";
-import { registerNetworkRoutes } from "./network-routes";
+import { registerNetworkRoutes, areConnected } from "./network-routes";
 import { registerProductionPaymentRoutes } from "./production-payment-routes";
 import { registerOAuthRoutes } from "./oauth-routes";
 import { pageConfigSchema } from "@shared/page-config";
@@ -766,6 +766,13 @@ export async function registerRoutes(
       }
       if (prod.creatorId !== req.userId) {
         return res.status(403).json({ error: "Not authorized" });
+      }
+      // Hiring needs a Connect: you can add yourself or an accepted connection.
+      // Only new adds are checked; crew already on a production are untouched.
+      const target = storage.getProfileById(Number(req.body?.profileId));
+      if (!target) return res.status(404).json({ error: "Profile not found" });
+      if (target.userId !== req.userId && !areConnected(req.userId!, target.userId)) {
+        return res.status(403).json({ error: "You need to be connected with this member before adding them to a production.", code: "not_connected" });
       }
       const member = storage.addCrewMember({
         ...req.body,
