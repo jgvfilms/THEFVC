@@ -15,18 +15,43 @@ import { platformFeeCents, type FeePayer } from "./platform-fee";
 // Re-exported so existing imports (`from "./lib/stripe"`) keep working.
 export { stripe, isStripeConfigured, STRIPE_API_VERSION } from "./stripe-client";
 
+// Stripe now refuses new v1 Express accounts where the platform is the losses
+// collector, so member accounts are Accounts v2 with Stripe as losses collector
+// (managed risk: Stripe, not FVC, absorbs negative balances). The pinned v1 SDK
+// has no v2 surface, so these two calls go over HTTP; everything after creation
+// (retrieve, Checkout direct charges) uses v1 endpoints, which accept v2 IDs.
+const STRIPE_V2_VERSION = "2026-10-28.endive";
+
+async function stripeV2Post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://api.stripe.com/v2/core/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_V2_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // Log Stripe's message but never the pay/onboarding URL or key.
+    console.error("Stripe v2 error", path, res.status, json?.error?.code, json?.error?.message);
+    throw new Error(json?.error?.message || `Stripe v2 ${path} failed (${res.status})`);
+  }
+  return json as T;
+}
+
 /**
- * Create a Stripe Connect Express account for a user.
- * Stores the account ID on the user's profile.
+ * Create a Stripe-managed-risk connected account for a user (merchant of record,
+ * full Stripe Dashboard) and store its ID on the profile.
  */
 export async function createStripeConnectAccount(userId: number, email: string): Promise<string> {
-  const account = await stripe.accounts.create({
-    type: "express",
-    email,
-    capabilities: {
-      card_payments: { requested: true },
-      transfers: { requested: true },
-    },
+  const account = await stripeV2Post<{ id: string }>("accounts", {
+    contact_email: email,
+    identity: { country: "us" },
+    dashboard: "full",
+    defaults: { responsibilities: { fees_collector: "stripe", losses_collector: "stripe" } },
+    configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
   });
 
   storage.updateProfileSubscription(userId, {
@@ -38,20 +63,24 @@ export async function createStripeConnectAccount(userId: number, email: string):
 
 /**
  * Generate a Stripe-hosted onboarding link for a connected account.
- * User completes identity verification and tax setup here.
+ * User completes identity verification and bank setup here.
  */
 export async function createAccountLink(
   accountId: string,
   refreshUrl: string,
   returnUrl: string
 ): Promise<string> {
-  const link = await stripe.accountLinks.create({
+  const link = await stripeV2Post<{ url: string }>("account_links", {
     account: accountId,
-    refresh_url: refreshUrl,
-    return_url: returnUrl,
-    type: "account_onboarding",
+    use_case: {
+      type: "account_onboarding",
+      account_onboarding: {
+        configurations: ["merchant"],
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
+      },
+    },
   });
-
   return link.url;
 }
 
