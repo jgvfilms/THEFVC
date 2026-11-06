@@ -126,8 +126,9 @@ export function ProductionDetail() {
       toast({ title: "Handle and role are required", variant: "destructive" });
       return;
     }
-    // Look up profile by handle
-    apiRequestJson<{ profile: Profile }>("GET", `/api/profiles/${crewHandle}`)
+    // Handles are stored without the "@" the placeholder shows, and the lookup is an exact match.
+    const handle = crewHandle.trim().replace(/^@/, "");
+    apiRequestJson<{ profile: Profile }>("GET", `/api/profiles/${encodeURIComponent(handle)}`)
       .then((data) => {
         if (!data?.profile) {
           toast({ title: "Profile not found", variant: "destructive" });
