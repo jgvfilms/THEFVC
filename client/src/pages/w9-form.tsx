@@ -253,7 +253,7 @@ export function W9FormPage() {
         </Card>
 
         <div className="flex items-center justify-between pt-4 border-t">
-          <Link href="/payments">
+          <Link href="/app/payments">
             <Button variant="outline" size="sm" data-testid="button-cancel-w9">
               Cancel
             </Button>

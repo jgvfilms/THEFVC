@@ -8,28 +8,54 @@
 import Stripe from "stripe";
 import { storage } from "../storage";
 import { encryptSensitive } from "./encryption";
+import { syncInvoiceFromStripe } from "./invoicing";
+import { stripe } from "./stripe-client";
+import { platformFeeCents, type FeePayer } from "./platform-fee";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "[REDACTED]", {
-  apiVersion: "2023-10-16",
-});
+// Re-exported so existing imports (`from "./lib/stripe"`) keep working.
+export { stripe, isStripeConfigured, STRIPE_API_VERSION } from "./stripe-client";
+
+// Stripe now refuses new v1 Express accounts where the platform is the losses
+// collector, so member accounts are Accounts v2 with Stripe as losses collector
+// (managed risk: Stripe, not FVC, absorbs negative balances). The pinned v1 SDK
+// has no v2 surface, so these two calls go over HTTP; everything after creation
+// (retrieve, Checkout direct charges) uses v1 endpoints, which accept v2 IDs.
+const STRIPE_V2_VERSION = "2026-10-28.endive";
+
+async function stripeV2Post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://api.stripe.com/v2/core/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_V2_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // Log Stripe's message but never the pay/onboarding URL or key.
+    console.error("Stripe v2 error", path, res.status, json?.error?.code, json?.error?.message);
+    throw new Error(json?.error?.message || `Stripe v2 ${path} failed (${res.status})`);
+  }
+  return json as T;
+}
 
 /**
- * Create a Stripe Connect Express account for a user.
- * Stores the account ID on the user's profile.
+ * Create a Stripe-managed-risk connected account for a user (merchant of record,
+ * full Stripe Dashboard) and store its ID on the profile.
  */
 export async function createStripeConnectAccount(userId: number, email: string): Promise<string> {
-  const account = await stripe.accounts.create({
-    type: "express",
-    email,
-    capabilities: {
-      card_payments: { requested: true },
-      transfers: { requested: true },
-    },
+  const account = await stripeV2Post<{ id: string }>("accounts", {
+    contact_email: email,
+    identity: { country: "us" },
+    dashboard: "full",
+    defaults: { responsibilities: { fees_collector: "stripe", losses_collector: "stripe" } },
+    configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
   });
 
   storage.updateProfileSubscription(userId, {
     stripeConnectAccountId: encryptSensitive(account.id),
-    subscriptionStatus: "onboarding",
   });
 
   return account.id;
@@ -37,21 +63,40 @@ export async function createStripeConnectAccount(userId: number, email: string):
 
 /**
  * Generate a Stripe-hosted onboarding link for a connected account.
- * User completes identity verification and tax setup here.
+ * User completes identity verification and bank setup here.
  */
 export async function createAccountLink(
   accountId: string,
   refreshUrl: string,
   returnUrl: string
 ): Promise<string> {
-  const link = await stripe.accountLinks.create({
+  const link = await stripeV2Post<{ url: string }>("account_links", {
     account: accountId,
-    refresh_url: refreshUrl,
-    return_url: returnUrl,
-    type: "account_onboarding",
+    use_case: {
+      type: "account_onboarding",
+      account_onboarding: {
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
+      },
+    },
   });
-
   return link.url;
+}
+
+/**
+ * Record whether a connected account can take charges and receive payouts.
+ * Stripe is the only authority: this is called with an Account object it sent
+ * (webhook) or that we just fetched from it, never with client-supplied facts.
+ */
+export function recordConnectCapabilities(userId: number, account: Pick<Stripe.Account, "charges_enabled" | "payouts_enabled">): boolean {
+  const charges = !!account.charges_enabled;
+  const payouts = !!account.payouts_enabled;
+  storage.updateProfileSubscription(userId, { connectChargesEnabled: charges, connectPayoutsEnabled: payouts });
+  return charges && payouts;
+}
+
+export async function syncConnectOnboarding(userId: number, accountId: string): Promise<boolean> {
+  return recordConnectCapabilities(userId, await stripe.accounts.retrieve(accountId));
 }
 
 /**
@@ -62,6 +107,7 @@ export async function createPaymentIntent(
   amount: number,
   currency: string,
   connectedAccountId: string,
+  payer: FeePayer,
   description?: string
 ): Promise<string> {
   const paymentIntent = await stripe.paymentIntents.create(
@@ -69,7 +115,7 @@ export async function createPaymentIntent(
       amount,
       currency,
       description,
-      application_fee_amount: Math.round(amount * 0.05), // 5% platform fee
+      application_fee_amount: platformFeeCents(amount, payer),
     },
     {
       stripeAccount: connectedAccountId,
@@ -93,6 +139,78 @@ export async function getPayout(payoutId: string, connectedAccountId: string) {
  * Call this from the webhook endpoint to update payment statuses.
  */
 export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
+  // Stripe retries failed deliveries for up to 3 days with exponential backoff
+  // and can deliver the same event more than once. Claim it first so a
+  // redelivered invoice.paid doesn't re-run side effects.
+  if (!storage.claimWebhookEvent(event.id, event.type)) {
+    return;
+  }
+
+  try {
+    await routeStripeEvent(event);
+    storage.markWebhookEventProcessed(event.id);
+  } catch (err: any) {
+    storage.markWebhookEventProcessed(event.id, String(err?.message || err));
+    throw err;
+  }
+}
+
+async function routeStripeEvent(event: Stripe.Event): Promise<void> {
+  // ── Invoicing events ──────────────────────────────────────
+  // Handled before the switch below because they share one shape.
+  if (event.type.startsWith("invoice.")) {
+    const stripeInvoice = event.data.object as Stripe.Invoice;
+    const local = stripeInvoice.id ? storage.getInvoiceByStripeId(stripeInvoice.id) : undefined;
+
+    // Not one of ours (e.g. a subscription invoice) — ignore quietly.
+    if (!local) return;
+
+    switch (event.type) {
+      case "invoice.finalized":
+      case "invoice.sent":
+      case "invoice.paid":
+      case "invoice.voided":
+      case "invoice.marked_uncollectible": {
+        // syncInvoiceFromStripe cancels pending reminders on any terminal status.
+        syncInvoiceFromStripe(stripeInvoice);
+        storage.logInvoiceEvent({
+          invoiceId: local.id,
+          eventType:
+            event.type === "invoice.paid"
+              ? "paid"
+              : event.type === "invoice.voided"
+                ? "voided"
+                : event.type.replace("invoice.", ""),
+          source: "stripe_webhook",
+          actorId: null,
+          payload: JSON.stringify({
+            stripeEventId: event.id,
+            status: stripeInvoice.status,
+            amountPaid: stripeInvoice.amount_paid,
+          }),
+        });
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        // Deliberately does NOT stop reminders. A failed card attempt means
+        // the balance is still owed, so the follow-up ladder should continue.
+        storage.logInvoiceEvent({
+          invoiceId: local.id,
+          eventType: "payment_failed",
+          source: "stripe_webhook",
+          actorId: null,
+          payload: JSON.stringify({ stripeEventId: event.id }),
+        });
+        break;
+      }
+
+      default:
+        break;
+    }
+    return;
+  }
+
   switch (event.type) {
     case "payment_intent.succeeded": {
       const intent = event.data.object as Stripe.PaymentIntent;
@@ -144,14 +262,8 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
 
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
-      // Update profile flags based on account capabilities
       const profile = storage.getProfileByStripeAccountId(account.id);
-      if (profile) {
-        storage.updateProfileSubscription(profile.userId, {
-          subscriptionStatus:
-            account.charges_enabled && account.payouts_enabled ? "active" : "onboarding",
-        });
-      }
+      if (profile) recordConnectCapabilities(profile.userId, account);
       break;
     }
 
@@ -169,7 +281,7 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
           // Create a payment record for the subscription
           storage.createPayment({
             userId: parseInt(userId),
-            amount: Math.round((session.amount_total || 0) / 100), // Convert cents to dollars
+            amount: session.amount_total || 0, // Stripe already reports integer cents; the column is cents
             currency: session.currency || "usd",
             status: "succeeded",
             stripeChargeId: session.payment_intent ? (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent.id) : null,

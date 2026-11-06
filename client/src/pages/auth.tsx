@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequestJson, parseApiErrorMessage } from "@/lib/queryClient";
+import { takeReturnPath } from "@/lib/return-path";
 
 const ROLES = [
   "Director", "Producer", "Director of Photography", "Camera Operator", "1st AC", "2nd AC",
@@ -15,12 +16,64 @@ const ROLES = [
   "Wardrobe", "Makeup Artist", "Stunt Coordinator", "Actor", "Filmmaker",
 ];
 
+// Errors come back as a query param because the browser is mid-redirect from
+// Google and there's no fetch response to read a message off of.
+const OAUTH_ERRORS: Record<string, string> = {
+  google_not_configured: "Google sign-in isn't set up on this environment yet.",
+  google_denied: "Google sign-in was cancelled.",
+  google_state: "That sign-in link expired. Please try again.",
+  google_email_unverified: "Your Google account's email isn't verified.",
+  invite_required: "The beta is invite-only. Request access to join the waitlist.",
+  signup_closed: "Sign-up is coming soon.",
+  account_revoked: "That account's access has been revoked.",
+  google_failed: "Google sign-in failed. Please try again.",
+};
+
+function GoogleButton({ label, inviteToken }: { label: string; inviteToken: string | null }) {
+  const href = inviteToken
+    ? `/api/auth/google?invite=${encodeURIComponent(inviteToken)}`
+    : "/api/auth/google";
+  return (
+    <>
+      <div className="mt-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      {/* A plain link, not fetch: OAuth needs a full-page navigation to Google. */}
+      <Button asChild variant="outline" className="mt-4 w-full" data-testid="button-google">
+        <a href={href}>
+          <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" />
+            <path fill="#FBBC05" d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84Z" />
+            <path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.47 14.97.5 12 .5A11 11 0 0 0 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z" />
+          </svg>
+          {label}
+        </a>
+      </Button>
+    </>
+  );
+}
+
+// Signup is invite-only: people join the waitlist, an admin approves them at
+// /app/admin, and the emailed invite link opens the signup form. Set to false
+// to send invite links to plain login instead.
+const SIGNUP_ENABLED = true;
+
 export function AuthPage() {
-  const { login, signup } = useAuth();
+  const { login, signup, adoptToken } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<"login" | "signup" | "request">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "request" | "forgot">("login");
   const [loading, setLoading] = useState(false);
+  // `disabled={loading}` alone doesn't stop a fast double-click or Enter+click:
+  // the button only becomes disabled on the next render, and both event
+  // handlers can fire before React gets there. This ref is mutated
+  // synchronously, so the second call is rejected immediately regardless of
+  // render timing — that's what was causing two /api/auth/login submissions
+  // (two sessions, then token/session thrashing) from a single login attempt.
+  const submittingRef = useRef(false);
 
   // Invite token from URL query param
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -42,11 +95,44 @@ export function AuthPage() {
   const [reqMessage, setReqMessage] = useState("");
   const [reqSubmitted, setReqSubmitted] = useState(false);
 
-  // Parse invite token from the URL query string
+  // Forgot-password fields
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+
+  // Returning from the Google redirect: either a session token in the fragment
+  // or an error code in the query string.
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get("error");
+    if (err) {
+      toast({ title: OAUTH_ERRORS[err] || "Sign-in failed", variant: "destructive" });
+      if (err === "invite_required") setMode("request");
+      history.replaceState(null, "", window.location.pathname);
+    }
+
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    if (token) {
+      // Strip it before anything can await — a session token has no business
+      // sitting in the address bar or in browser history.
+      history.replaceState(null, "", window.location.pathname);
+      setLoading(true);
+      adoptToken(token)
+        .then(() => {
+          toast({ title: "Welcome back" });
+          navigate(takeReturnPath());
+        })
+        .catch(() => toast({ title: "Sign-in failed. Please try again.", variant: "destructive" }))
+        .finally(() => setLoading(false));
+    }
+  }, []);
+
+  // Parse invite token from the URL query string. While SIGNUP_ENABLED is
+  // false, invite links land on plain login so no path reaches the signup form.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("invite");
-    if (token) {
+    if (token && !SIGNUP_ENABLED) {
+      toast({ title: "Sign-up is coming soon" });
+    } else if (token) {
       setInviteToken(token);
       setMode("signup");
       // Validate the invite
@@ -67,12 +153,16 @@ export function AuthPage() {
         })
         .finally(() => setInviteChecked(true));
     } else {
+      // Landing-page "Join" buttons link to /auth?join=1: open the waitlist form.
+      if (params.has("join")) setMode("request");
       setInviteChecked(true);
     }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -97,7 +187,7 @@ export function AuthPage() {
         await login(email, password);
       }
       toast({ title: mode === "signup" ? "Account created" : "Welcome back" });
-      navigate("/app");
+      navigate(takeReturnPath());
     } catch (err: any) {
       let msg = parseApiErrorMessage(err, "Authentication failed");
       if (msg.includes("invite-only")) {
@@ -106,6 +196,7 @@ export function AuthPage() {
       }
       toast({ title: msg, variant: "destructive" });
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -126,6 +217,25 @@ export function AuthPage() {
     } catch (err: any) {
       const msg = parseApiErrorMessage(err, "Failed to submit request");
       toast({ title: msg, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) {
+      toast({ title: "Email is required", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiRequestJson("POST", "/api/auth/password-reset/request", { email: resetEmail });
+      // The server answers the same way whether or not the account exists,
+      // so the UI does too.
+      setResetSent(true);
+    } catch (err: any) {
+      toast({ title: parseApiErrorMessage(err, "Couldn't send reset link"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -185,13 +295,52 @@ export function AuthPage() {
                   <Input id="email" type="email" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-email" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => { setResetEmail(email); setResetSent(false); setMode("forgot"); }}
+                      className="text-xs text-primary hover:underline"
+                      data-testid="link-forgot-password"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="........" data-testid="input-password" />
                 </div>
                 <Button type="submit" disabled={loading} className="w-full" data-testid="button-submit">
                   {loading ? "Loading..." : "Log in"}
                 </Button>
               </form>
+
+              <GoogleButton label="Continue with Google" inviteToken={inviteToken} />
+            </>
+          )}
+
+          {/* FORGOT PASSWORD MODE */}
+          {mode === "forgot" && (
+            <>
+              <h1 className="font-display text-xl font-700" data-testid="auth-title">Reset your password</h1>
+              {resetSent ? (
+                <p className="mt-2 text-sm text-muted-foreground" data-testid="reset-sent">
+                  If an account exists for {resetEmail}, we've sent a link to reset its password. The link expires in an hour.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-muted-foreground" data-testid="auth-subtitle">
+                    Enter your account's email and we'll send you a reset link.
+                  </p>
+                  <form onSubmit={handleForgotPassword} className="mt-6 space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="resetEmail">Email</Label>
+                      <Input id="resetEmail" type="email" autoCapitalize="none" value={resetEmail} onChange={e => setResetEmail(e.target.value.trim().toLowerCase())} placeholder="you@example.com" data-testid="input-reset-email" />
+                    </div>
+                    <Button type="submit" disabled={loading} className="w-full" data-testid="button-send-reset">
+                      {loading ? "Sending..." : "Send reset link"}
+                    </Button>
+                  </form>
+                </>
+              )}
             </>
           )}
 
@@ -244,6 +393,8 @@ export function AuthPage() {
                   {loading ? "Loading..." : "Create account"}
                 </Button>
               </form>
+
+              {inviteToken && <GoogleButton label="Sign up with Google" inviteToken={inviteToken} />}
             </>
           )}
 
@@ -252,10 +403,9 @@ export function AuthPage() {
             <>
               {reqSubmitted ? (
                 <div className="text-center" data-testid="request-success">
-                  <div className="mb-4 text-5xl">........</div>
                   <h1 className="font-display text-xl font-700">You're on the list</h1>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    We'll email you when your beta invite is ready. You'll get a unique link to create your account.
+                    Check your inbox for a confirmation. We'll email you a personal invite link when your spot opens up.
                   </p>
                   <Button onClick={() => { setReqSubmitted(false); setMode("login"); }} variant="outline" className="mt-6">
                     Back to login
@@ -313,7 +463,7 @@ export function AuthPage() {
 
           {/* Footer links */}
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+            {mode === "login" ? "Don't have an account? " : mode === "forgot" ? "Remembered it? " : "Already have an account? "}
             <button
               onClick={() => setMode(mode === "login" ? (inviteToken ? "signup" : "request") : "login")}
               className="text-primary hover:underline font-500"
@@ -335,20 +485,6 @@ export function AuthPage() {
           <p className="mt-6 text-muted-foreground">
             Payments, crew discovery, and production management — finally in one place.
           </p>
-          <div className="mt-12 grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">$0</p>
-              <p className="text-xs text-muted-foreground">to start</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">3</p>
-              <p className="text-xs text-muted-foreground">free projects</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl font-700 text-primary">2.5%</p>
-              <p className="text-xs text-muted-foreground">transaction fee</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

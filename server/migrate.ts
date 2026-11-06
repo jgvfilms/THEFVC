@@ -1,8 +1,9 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { dirname } from "path";
 import { scryptSync, randomBytes } from "node:crypto";
 import { encryptSensitive } from "./lib/encryption";
+import { PROFILE_UPLOADS_DIR } from "./lib/paths";
 
 // Respects DATABASE_PATH so deploy targets with a mounted persistent
 // volume (e.g. Railway) can point this at a durable path. Falls back
@@ -24,6 +25,7 @@ const PROFILE_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "cover_url", def: "TEXT" },
   { name: "theme_preset", def: "TEXT DEFAULT 'cinema_gold'" },
   { name: "accent_color", def: "TEXT" },
+  { name: "page_config", def: "TEXT" },
   { name: "video_links", def: "TEXT DEFAULT '[]'" },
   { name: "social_links", def: "TEXT DEFAULT '{}'" },
   { name: "imdb_credits", def: "TEXT DEFAULT '[]'" },
@@ -33,6 +35,8 @@ const PROFILE_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "subscription_tier", def: "TEXT DEFAULT 'free'" },
   { name: "subscription_status", def: "TEXT DEFAULT 'inactive'" },
   { name: "w9_collected", def: "INTEGER DEFAULT 0" },
+  { name: "connect_charges_enabled", def: "INTEGER DEFAULT 0" },
+  { name: "connect_payouts_enabled", def: "INTEGER DEFAULT 0" },
 ];
 
 const USER_COLUMNS: Array<{ name: string; def: string }> = [
@@ -41,13 +45,90 @@ const USER_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "invited_by", def: "INTEGER" },
   { name: "activated_at", def: "INTEGER" },
   { name: "last_login_at", def: "INTEGER" },
+  { name: "google_id", def: "TEXT" },
+  { name: "email_on_message", def: "INTEGER DEFAULT 1" },
 ];
 
 const BLOCKED_IPS_COLUMNS: Array<{ name: string; def: string }> = [
   { name: "scope", def: "TEXT" },
 ];
 
+const PRODUCTION_COLUMNS: Array<{ name: string; def: string }> = [
+  { name: "cover_url", def: "TEXT" },
+];
+
 const NEW_TABLES = [
+  `CREATE TABLE IF NOT EXISTS production_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id INTEGER NOT NULL REFERENCES productions(id),
+    kind TEXT NOT NULL CHECK(kind IN ('receive', 'pay_crew')),
+    payee_user_id INTEGER NOT NULL REFERENCES users(id),
+    payer_user_id INTEGER REFERENCES users(id),
+    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+    fee_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'usd',
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    stripe_session_id TEXT,
+    stripe_payment_intent_id TEXT,
+    created_at INTEGER NOT NULL,
+    paid_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    client_id TEXT NOT NULL,
+    scopes TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS mcp_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    token_prefix TEXT NOT NULL,
+    scopes TEXT NOT NULL DEFAULT '[]',
+    last_used_at INTEGER,
+    expires_at INTEGER,
+    revoked_at INTEGER,
+    kind TEXT NOT NULL DEFAULT 'personal' CHECK(kind IN ('personal', 'oauth_access')),
+    oauth_grant_id INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    client_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_pending (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    params TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_codes (
+    code_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    scopes TEXT NOT NULL,
+    code_challenge TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    scopes TEXT NOT NULL,
+    access_token_id INTEGER NOT NULL,
+    oauth_grant_id INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  )`,
   `CREATE TABLE IF NOT EXISTS beta_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,
@@ -197,6 +278,34 @@ const NEW_TABLES = [
     is_read INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL REFERENCES users(id),
+    recipient_id INTEGER NOT NULL REFERENCES users(id),
+    body TEXT NOT NULL,
+    read_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS follows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    follower_id INTEGER NOT NULL REFERENCES users(id),
+    followee_id INTEGER NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS member_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL REFERENCES users(id),
+    addressee_id INTEGER NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    responded_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS member_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    blocker_id INTEGER NOT NULL REFERENCES users(id),
+    blocked_id INTEGER NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  )`,
   // ===== PRD-007: Payments & Monetization =====
   `CREATE TABLE IF NOT EXISTS subscription_tiers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -241,7 +350,149 @@ const NEW_TABLES = [
     submitted_at INTEGER NOT NULL,
     verified_at INTEGER
   )`,
+  // ===== INVOICING =====
+  `CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id TEXT NOT NULL UNIQUE,
+    stripe_invoice_id TEXT UNIQUE,
+    stripe_customer_id TEXT,
+    issuer_user_id INTEGER REFERENCES users(id),
+    recipient_user_id INTEGER NOT NULL REFERENCES users(id),
+    recipient_email TEXT NOT NULL,
+    recipient_name TEXT NOT NULL,
+    production_id INTEGER REFERENCES productions(id),
+    status TEXT NOT NULL DEFAULT 'draft',
+    currency TEXT NOT NULL DEFAULT 'usd',
+    subtotal_cents INTEGER NOT NULL DEFAULT 0,
+    total_cents INTEGER NOT NULL DEFAULT 0,
+    amount_paid_cents INTEGER NOT NULL DEFAULT 0,
+    amount_due_cents INTEGER NOT NULL DEFAULT 0,
+    due_date INTEGER,
+    issued_at INTEGER,
+    paid_at INTEGER,
+    voided_at INTEGER,
+    hosted_invoice_url TEXT,
+    invoice_pdf_url TEXT,
+    memo TEXT,
+    internal_note TEXT,
+    reminders_enabled INTEGER NOT NULL DEFAULT 1,
+    reminder_profile TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_line_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    stripe_invoice_item_id TEXT,
+    description TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_amount_cents INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    offset_days INTEGER NOT NULL,
+    send_at INTEGER NOT NULL,
+    tone TEXT NOT NULL DEFAULT 'neutral',
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at INTEGER,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(invoice_id, offset_days)
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    actor_id INTEGER REFERENCES users(id),
+    payload TEXT DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at INTEGER NOT NULL,
+    processed_at INTEGER,
+    error TEXT
+  )`,
 ];
+
+const INDEXES = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_follows_pair ON follows(follower_id, followee_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_connections_pair ON member_connections(requester_id, addressee_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_connections_addressee ON member_connections(addressee_id, status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_blocks_pair ON member_blocks(blocker_id, blocked_id)`,
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_production ON production_payments(production_id)",
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_payee ON production_payments(payee_user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_production_payments_payer ON production_payments(payer_user_id)",
+  `CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, read_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, recipient_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_recipient ON invoices(recipient_user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices(due_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_line_items_invoice ON invoice_line_items(invoice_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_reminders_pending ON invoice_reminders(status, send_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_events_invoice ON invoice_events(invoice_id, created_at)`,
+  // Unique so a Google account can never be linked to two FVC users. Partial,
+  // because every password-only row has google_id NULL.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`,
+];
+
+
+// The MCP/OAuth tables shipped before grants existed, so a live database has the
+// old shape and CREATE TABLE IF NOT EXISTS won't touch it. Add the columns, then
+// give every pre-existing connection a grant so it keeps working and can still
+// be revoked as one unit. Idempotent: it only looks at rows with no grant yet.
+function upgradeOAuthTables() {
+  const addMissing = (table: string, cols: Array<{ name: string; def: string }>) => {
+    const have = new Set((sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name));
+    for (const col of cols) if (!have.has(col.name)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.def}`);
+  };
+  addMissing("mcp_tokens", [
+    { name: "kind", def: "TEXT NOT NULL DEFAULT 'personal' CHECK(kind IN ('personal', 'oauth_access'))" },
+    { name: "oauth_grant_id", def: "INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE" },
+  ]);
+  addMissing("oauth_refresh_tokens", [{ name: "oauth_grant_id", def: "INTEGER REFERENCES oauth_grants(id) ON DELETE CASCADE" }]);
+  addMissing("oauth_clients", [{ name: "last_used_at", def: "INTEGER" }]);
+
+  sqlite.transaction(() => {
+    // One grant per (member, app). A refresh chain can't be reconstructed exactly
+    // from rotated rows, and grouping this way never merges two members' apps.
+    const groups = sqlite.prepare(
+      `SELECT user_id, client_id, MIN(expires_at) AS first_expires,
+              MAX(CASE WHEN revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS live
+         FROM oauth_refresh_tokens WHERE oauth_grant_id IS NULL GROUP BY user_id, client_id`,
+    ).all(Math.floor(Date.now() / 1000)) as Array<{ user_id: number; client_id: string; live: number }>;
+    for (const g of groups) {
+      const latest = sqlite.prepare(
+        `SELECT scopes FROM oauth_refresh_tokens WHERE user_id = ? AND client_id = ? AND oauth_grant_id IS NULL ORDER BY expires_at DESC LIMIT 1`,
+      ).get(g.user_id, g.client_id) as { scopes: string };
+      const now = Math.floor(Date.now() / 1000); // timestamp columns hold seconds
+      const grant = sqlite.prepare(
+        `INSERT INTO oauth_grants (user_id, client_id, scopes, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)`,
+      ).run(g.user_id, g.client_id, latest.scopes, now, g.live ? null : now);
+      sqlite.prepare(`UPDATE oauth_refresh_tokens SET oauth_grant_id = ? WHERE user_id = ? AND client_id = ? AND oauth_grant_id IS NULL`)
+        .run(grant.lastInsertRowid, g.user_id, g.client_id);
+    }
+    // Access tokens are identified by the refresh rows issued with them, not by name.
+    sqlite.exec(
+      `UPDATE mcp_tokens
+          SET kind = 'oauth_access',
+              oauth_grant_id = (SELECT r.oauth_grant_id FROM oauth_refresh_tokens r WHERE r.access_token_id = mcp_tokens.id)
+        WHERE kind = 'personal' AND id IN (SELECT access_token_id FROM oauth_refresh_tokens)`,
+    );
+  })();
+
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_oauth_grants_user ON oauth_grants(user_id, revoked_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_mcp_tokens_grant ON mcp_tokens(oauth_grant_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_oauth_refresh_grant ON oauth_refresh_tokens(oauth_grant_id)");
+}
 
 export function runMigrations() {
   // Profile columns
@@ -269,6 +520,13 @@ export function runMigrations() {
     sqlite.exec(sql);
   }
 
+  upgradeOAuthTables();
+
+  // Indexes (after tables exist)
+  for (const sql of INDEXES) {
+    sqlite.exec(sql);
+  }
+
   // blocked_ips columns (table itself created above via NEW_TABLES, but
   // CREATE TABLE IF NOT EXISTS is a no-op on an already-existing table, so
   // new columns on it still need the same idempotent ALTER TABLE pattern)
@@ -278,6 +536,15 @@ export function runMigrations() {
     if (!blockedIpsExisting.has(col.name)) {
       sqlite.exec(`ALTER TABLE blocked_ips ADD COLUMN ${col.name} ${col.def}`);
       console.log(`[migration] Added column blocked_ips.${col.name}`);
+    }
+  }
+
+  const productionCols = sqlite.prepare("PRAGMA table_info(productions)").all() as Array<{ name: string }>;
+  const productionExisting = new Set(productionCols.map((c) => c.name));
+  for (const col of PRODUCTION_COLUMNS) {
+    if (!productionExisting.has(col.name)) {
+      sqlite.exec(`ALTER TABLE productions ADD COLUMN ${col.name} ${col.def}`);
+      console.log(`[migration] Added column productions.${col.name}`);
     }
   }
 
@@ -323,58 +590,33 @@ export function runMigrations() {
   // Bootstrap admin: create from env vars if missing, always set is_admin
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
+  const insertStaffProfile = (userId: number) => {
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.prepare(
+      "INSERT INTO profiles (user_id, display_name, role, avatar_initials, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)"
+    ).run(userId, "THE FVC Team", "Staff", "FVC", now, now);
+  };
   if (!adminEmail || !adminPassword) {
     console.warn("[migration] ADMIN_EMAIL or ADMIN_PASSWORD not set — skipping admin bootstrap");
   } else {
   const adminUser = sqlite.prepare("SELECT id FROM users WHERE email = ?").get(adminEmail) as { id: number } | undefined;
   if (!adminUser) {
-    // Create admin user
+    // The admin is a staff account, not a member: its own handle and a private,
+    // plain profile, so it never shows up in the crew directory. (It used to
+    // reuse the founder's handle and public profile, which collides with the
+    // founder's personal account once ADMIN_EMAIL points anywhere else.)
     const salt = randomBytes(16).toString("hex");
     const hash = scryptSync(adminPassword, salt, 64).toString("hex");
     const now = Math.floor(Date.now() / 1000);
+    let handle = "fvc-team";
+    for (let n = 2; sqlite.prepare("SELECT 1 FROM users WHERE handle = ?").get(handle); n++) handle = `fvc-team-${n}`;
     const result = sqlite.prepare(
       "INSERT INTO users (handle, email, password_hash, is_admin, access_status, created_at) VALUES (?, ?, ?, 1, 'active', ?)"
-    ).run("jgvfilms", adminEmail, `${salt}:${hash}`, now);
+    ).run(handle, adminEmail, `${salt}:${hash}`, now);
     const adminId = result.lastInsertRowid as number;
     console.log(`[migration] Created admin user id=${adminId}`);
 
-    // Create admin profile
-    sqlite.prepare(
-      "INSERT INTO profiles (user_id, display_name, role, city, state, country, bio, avatar_initials, imdb_url, imdb_credits, website_url, theme_preset, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
-    ).run(
-      adminId,
-      "J. Garrett Vorreuter",
-      "Director / Producer / Cinematographer",
-      "Buffalo", "NY", "US",
-      "Filmmaker and founder of the Film Video Collective. Director, producer, and cinematographer with credits spanning features, shorts, TV series, and music videos.",
-      "JV",
-      "https://www.imdb.com/name/nm7102371/",
-      JSON.stringify([
-        { title: "Unbillievable", year: 2023, role: "Director", rating: "7.8", imdbUrl: "https://www.imdb.com/title/tt27449919/" },
-        { title: "Unbillievable", year: 2023, role: "Producer", rating: "7.8", imdbUrl: "https://www.imdb.com/title/tt27449919/" },
-        { title: "If She Screams", year: 2021, role: "Director", rating: "3.1", imdbUrl: "https://www.imdb.com/title/tt8278572/" },
-        { title: "If She Screams", year: 2021, role: "Writer", rating: "3.1", imdbUrl: "https://www.imdb.com/title/tt8278572/" },
-        { title: "Making Peace", year: 2021, role: "Co-Producer", rating: "9.0", imdbUrl: null },
-        { title: "The Lovers' Pas de Deux", year: 2020, role: "Producer", rating: null, imdbUrl: null },
-        { title: "Spent Saints & Other Stories", year: 2019, role: "Director", rating: null, imdbUrl: null },
-        { title: "Spent Saints & Other Stories", year: 2019, role: "Cinematographer", rating: null, imdbUrl: null },
-        { title: "My Friend, Tucker", year: 2019, role: "Cinematographer", rating: "6.8", imdbUrl: null },
-        { title: "The Rainbow Bridge Motel", year: 2018, role: "Director", rating: "4.2", imdbUrl: "https://www.imdb.com/title/tt6492186/" },
-        { title: "The Rainbow Bridge Motel", year: 2018, role: "Producer", rating: "4.2", imdbUrl: "https://www.imdb.com/title/tt6492186/" },
-        { title: "Cecilia", year: 2018, role: "Cinematographer", rating: null, imdbUrl: null },
-        { title: "Trickster", year: 2018, role: "Cinematographer", rating: "3.3", imdbUrl: null },
-        { title: "Mojave", year: 2017, role: "Cinematographer", rating: null, imdbUrl: null },
-        { title: "American Portrait", year: 2017, role: "Cinematographer", rating: null, imdbUrl: null },
-        { title: "Sophie: Quai du Louvre", year: 2016, role: "Cinematographer", rating: null, imdbUrl: null },
-        { title: "One Night Stay", year: 2016, role: "Director", rating: null, imdbUrl: "https://www.imdb.com/title/tt5720024/" },
-        { title: "One Night Stay", year: 2016, role: "Writer", rating: null, imdbUrl: "https://www.imdb.com/title/tt5720024/" },
-        { title: "Loyal to the Game", year: 2015, role: "Producer", rating: "9.6", imdbUrl: null },
-        { title: "Wild Orkids", year: null, role: "Director", rating: null, imdbUrl: null },
-      ]),
-      "https://thefvc.is",
-      "cinema_gold",
-      now, now
-    );
+    insertStaffProfile(adminId);
     console.log(`[migration] Created admin profile`);
   } else {
     sqlite.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(adminUser.id);
@@ -391,22 +633,15 @@ export function runMigrations() {
     // Also ensure profile exists
     const adminProfile = sqlite.prepare("SELECT id FROM profiles WHERE user_id = ?").get(adminUser.id) as { id: number } | undefined;
     if (!adminProfile) {
-      sqlite.prepare(
-        "INSERT INTO profiles (user_id, display_name, role, city, state, country, bio, avatar_initials, imdb_url, website_url, theme_preset, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
-      ).run(
-        adminUser.id, "J. Garrett Vorreuter", "Director / Producer / Cinematographer", "Buffalo", "NY", "US",
-        "Filmmaker and founder of the Film Video Collective.", "JV",
-        "https://www.imdb.com/name/nm7102371/", "https://thefvc.is", "cinema_gold", Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)
-      );
+      insertStaffProfile(adminUser.id);
       console.log(`[migration] Created admin profile for existing user`);
     }
   }
   } // end else (ADMIN_EMAIL/ADMIN_PASSWORD set)
 
   // Ensure uploads directory exists
-  const uploadsDir = join(process.cwd(), "uploads", "profiles");
-  if (!existsSync(uploadsDir)) {
-    mkdirSync(uploadsDir, { recursive: true });
+  if (!existsSync(PROFILE_UPLOADS_DIR)) {
+    mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
   }
 
   // Backfill activity feed from existing data

@@ -33,8 +33,22 @@ if (!process.env.ENCRYPTION_KEY) {
   process.env.ENCRYPTION_KEY = "0".repeat(64);
 }
 
+// Production keeps signup closed unless this is set; most suites need it open.
+if (process.env.SIGNUP_ENABLED === undefined) {
+  process.env.SIGNUP_ENABLED = "true";
+}
+
 const dbPath = join(tmpdir(), `thefvc-test-${process.pid}-${randomUUID()}.db`);
 process.env.DATABASE_PATH = dbPath;
+
+// Uploads go to a throwaway folder too, never the repo's uploads/.
+// Same for the rate-limit store: a persisted data/.rate-limits.json from dev
+// runs would otherwise leak counters into tests (403 instead of 429).
+const rateLimitDir = join(tmpdir(), `thefvc-test-ratelimit-${process.pid}-${randomUUID()}`);
+process.env.RATE_LIMIT_DIR = rateLimitDir;
+
+const uploadsDir = join(tmpdir(), `thefvc-test-uploads-${process.pid}-${randomUUID()}`);
+process.env.UPLOADS_DIR = uploadsDir;
 
 // Bootstrap the base schema (the tables drizzle-kit push would normally
 // create) before server/migrate.ts opens this file and tries to run its
@@ -52,6 +66,8 @@ afterAll(() => {
     rmSync(dbPath, { force: true });
     rmSync(`${dbPath}-wal`, { force: true });
     rmSync(`${dbPath}-shm`, { force: true });
+    rmSync(uploadsDir, { recursive: true, force: true });
+    rmSync(rateLimitDir, { recursive: true, force: true });
   } catch {
     // Best-effort cleanup — not worth failing the run over a leftover temp file.
   }

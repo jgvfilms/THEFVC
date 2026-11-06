@@ -9,6 +9,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createTestServer, getTestCredentials } from "../server";
 import { storage, db } from "../../server/storage";
 import { hashPassword } from "../../server/middleware/auth";
+import { sql } from "drizzle-orm";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 describe("API Integration Tests", () => {
   let server: Awaited<ReturnType<typeof createTestServer>>;
@@ -43,8 +46,43 @@ describe("API Integration Tests", () => {
     }
   });
 
+  // ===== Security headers =====
+  it("CSP lets profile pages embed YouTube and Vimeo reels, and nothing else", async () => {
+    const res = await fetch(`${baseUrl}/api/health`);
+    const csp = res.headers.get("content-security-policy") || "";
+    const frameSrc = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith("frame-src")) || "";
+    expect(frameSrc.split(/\s+/).slice(1).sort()).toEqual([
+      "https://player.vimeo.com",
+      "https://www.youtube-nocookie.com",
+      "https://www.youtube.com",
+    ]);
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
   // ===== AUTH: Signup =====
   describe("POST /api/auth/signup", () => {
+    it("should refuse all signups while SIGNUP_ENABLED is not 'true'", async () => {
+      const prev = process.env.SIGNUP_ENABLED;
+      delete process.env.SIGNUP_ENABLED;
+      try {
+        const res = await fetch(`${baseUrl}/api/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            handle: "closeduser",
+            email: "closed@example.com",
+            password: "Pass123!",
+            inviteToken: "any-token",
+          }),
+        });
+        expect(res.status).toBe(403);
+        await expect(res.json()).resolves.toMatchObject({ error: "Sign-up is coming soon." });
+        expect(storage.getUserByEmail("closed@example.com")).toBeUndefined();
+      } finally {
+        process.env.SIGNUP_ENABLED = prev;
+      }
+    });
+
     it("should reject signup without invite token (beta gate)", async () => {
       const res = await fetch(`${baseUrl}/api/auth/signup`, {
         method: "POST",
@@ -442,6 +480,70 @@ describe("API Integration Tests", () => {
     });
   });
 
+  // The founder's handle serves his standalone portfolio instead of the SPA
+  // profile; the profile itself stays at /u/jgvfilms.
+  describe("portfolio at /jgvfilms", () => {
+    it("serves the portfolio page with a CSP that allows the reel players", async () => {
+      const res = await fetch(`${baseUrl}/jgvfilms`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-security-policy")).toContain("frame-src https://www.youtube-nocookie.com");
+      const html = await res.text();
+      expect(html).toContain("<title>JGVFILMS");
+    });
+
+    it("redirects the portfolio's old address", async () => {
+      const res = await fetch(`${baseUrl}/JGarrettVorreuter`, { redirect: "manual" });
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("/jgvfilms");
+    });
+  });
+
+  // These endpoints need no auth, so billing and tax state must never ride along.
+  describe("public profile endpoints hide billing fields", () => {
+    const PRIVATE = ["stripeCustomerId", "stripeConnectAccountId", "subscriptionTier", "subscriptionStatus", "w9Collected"];
+
+    beforeEach(() => {
+      const user = storage.createUser({
+        handle: "payinguser",
+        email: "paying@test.com",
+        passwordHash: hashPassword("pass123"),
+      });
+      storage.createProfile({
+        userId: user.id,
+        displayName: "Paying User",
+        role: "Director",
+        city: "Buffalo",
+        state: "NY",
+        skills: JSON.stringify([]),
+        isPublic: true,
+        availability: "available",
+        stripeCustomerId: "cus_test123",
+        stripeConnectAccountId: "acct_test123",
+        subscriptionTier: "pro",
+        subscriptionStatus: "active",
+      });
+    });
+
+    it("GET /api/profiles/:handle", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles/payinguser`)).json();
+      expect(body.profile.displayName).toBe("Paying User");
+      for (const k of PRIVATE) expect(body.profile).not.toHaveProperty(k);
+    });
+
+    it("GET /api/profiles", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles`)).json();
+      expect(body).toHaveLength(1);
+      for (const k of PRIVATE) expect(body[0]).not.toHaveProperty(k);
+    });
+
+    it("GET /api/profiles/paginated", async () => {
+      const body = await (await fetch(`${baseUrl}/api/profiles/paginated`)).json();
+      expect(body.total).toBe(1);
+      expect(body.profiles[0].handle).toBe("payinguser");
+      for (const k of PRIVATE) expect(body.profiles[0]).not.toHaveProperty(k);
+    });
+  });
+
   // ===== BETA: Request Access =====
   describe("POST /api/beta/request", () => {
     it("should reject request without email", async () => {
@@ -452,7 +554,67 @@ describe("API Integration Tests", () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.json()).resolves.toMatchObject({ error: "Email is required" });
+      await expect(res.json()).resolves.toMatchObject({ error: "A valid email is required" });
+    });
+
+    it("emails a confirmation to the requester and a notice to the team", async () => {
+      process.env.WAITLIST_NOTIFY_EMAIL = "team@test.com";
+      try {
+        const res = await fetch(`${baseUrl}/api/beta/request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "  New.Person@Test.com ", displayName: "<b>Pat</b>", role: "Editor" }),
+        });
+        expect(res.status).toBe(201);
+
+        const queued = db.all<{ to: string; subject: string; html: string }>(sql`SELECT "to", subject, html FROM email_queue ORDER BY id`);
+        expect(queued.map((e) => e.to)).toEqual(["new.person@test.com", "team@test.com"]);
+        expect(queued[0].subject).toContain("waitlist");
+        expect(queued[1].html).toContain("Pat");
+        expect(queued[1].html).not.toContain("<b>Pat</b>");
+      } finally {
+        delete process.env.WAITLIST_NOTIFY_EMAIL;
+      }
+    });
+
+    it("lets someone whose invite was revoked rejoin, but not a rejected request", async () => {
+      const admin = storage.createUser({
+        handle: "revoker",
+        email: "revoker@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const invited = storage.createBetaRequest({ email: "again@test.com" });
+      const invite = storage.createInvite({ token: "revoked-token", email: "again@test.com", createdBy: admin.id });
+      storage.updateBetaRequest(invited.id, { status: "invited", inviteId: invite.id });
+      storage.revokeInvite(invite.id);
+      const rejected = storage.createBetaRequest({ email: "no@test.com" });
+      storage.updateBetaRequest(rejected.id, { status: "rejected" });
+
+      const post = (email: string) => fetch(`${baseUrl}/api/beta/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, displayName: "Again" }),
+      });
+
+      const rejoin = await post("again@test.com");
+      expect(rejoin.status).toBe(201);
+      const after = storage.getBetaRequest(invited.id);
+      expect(after?.status).toBe("pending");
+      expect(after?.inviteId).toBeNull();
+      expect(storage.getBetaRequests()).toHaveLength(2);
+
+      expect((await post("no@test.com")).status).toBe(409);
+    });
+
+    it("treats emails differing only in case as the same request", async () => {
+      storage.createBetaRequest({ email: "same@test.com" });
+      const res = await fetch(`${baseUrl}/api/beta/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "SAME@test.com" }),
+      });
+      expect(res.status).toBe(409);
     });
 
     it("should successfully submit beta request", async () => {
@@ -488,6 +650,161 @@ describe("API Integration Tests", () => {
       expect(res.status).toBe(409);
       const body = await res.json();
       expect(body.error).toContain("already on the waitlist");
+    });
+  });
+
+  // ===== BETA: Admin approval =====
+  describe("POST /api/admin/beta/requests/:id/approve", () => {
+    it("creates an invite and emails the link to the requester", async () => {
+      storage.createUser({
+        handle: "approver",
+        email: "approver@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "approver@test.com", password: "admin123" }),
+      });
+      const { token } = await loginRes.json();
+      const betaReq = storage.createBetaRequest({ email: "approved@test.com", displayName: "Approved Person" });
+
+      const res = await fetch(`${baseUrl}/api/admin/beta/requests/${betaReq.id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.emailed).toBe(true);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("approved@test.com");
+      expect(queued[0].html).toContain(body.inviteUrl);
+      expect(storage.getBetaRequest(betaReq.id)?.status).toBe("invited");
+    });
+  });
+
+  // ===== ADMIN: remove admin rights =====
+  describe("POST /api/admin/users/:id/remove-admin", () => {
+    async function loginAdmin(handle: string) {
+      const user = storage.createUser({
+        handle,
+        email: `${handle}@test.com`,
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "admin123" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    it("demotes another admin but keeps their account", async () => {
+      const { token } = await loginAdmin("staff");
+      const founder = storage.createUser({
+        handle: "founder",
+        email: "founder@test.com",
+        passwordHash: hashPassword("pw123456"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/admin/users/${founder.id}/remove-admin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const after = storage.getUser(founder.id);
+      expect(after?.isAdmin).toBe(false);
+      expect(after?.accessStatus).toBe(founder.accessStatus);
+    });
+
+    it("refuses to demote yourself", async () => {
+      const { user, token } = await loginAdmin("solo");
+      const res = await fetch(`${baseUrl}/api/admin/users/${user.id}/remove-admin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(400);
+      expect(storage.getUser(user.id)?.isAdmin).toBe(true);
+    });
+  });
+
+  // ===== ADMIN: resend an invite =====
+  describe("POST /api/admin/beta/invites/:id/resend", () => {
+    async function adminToken() {
+      const admin = storage.createUser({
+        handle: "resender",
+        email: "resender@test.com",
+        passwordHash: hashPassword("admin123"),
+        isAdmin: true,
+      });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "resender@test.com", password: "admin123" }),
+      });
+      return { admin, token: (await res.json()).token as string };
+    }
+    const resend = (token: string, id: number, email?: string) =>
+      fetch(`${baseUrl}/api/admin/beta/invites/${id}/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(email === undefined ? {} : { email }),
+      });
+
+    it("corrects a name-in-the-email-field invite and emails it", async () => {
+      const { admin, token } = await adminToken();
+      const invite = storage.createInvite({ token: "old-tok", email: "Matthew Lorentz", displayName: "Matt", createdBy: admin.id });
+      const linked = storage.createBetaRequest({ email: "Matthew Lorentz" });
+      storage.updateBetaRequest(linked.id, { status: "invited", inviteId: invite.id });
+
+      expect((await resend(token, invite.id)).status).toBe(400);
+
+      const res = await resend(token, invite.id, " Matt@Example.com ");
+      expect(res.status).toBe(200);
+      expect(storage.getInvites().find((i) => i.id === invite.id)?.email).toBe("matt@example.com");
+      expect(storage.getBetaRequest(linked.id)?.email).toBe("matt@example.com");
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("matt@example.com");
+      expect(queued[0].html).toContain("/auth?invite=old-tok");
+    });
+
+    it("New Invite emails when an address is given, stays link-only when blank, refuses a name", async () => {
+      const { token } = await adminToken();
+      const create = (body: object) => fetch(`${baseUrl}/api/admin/beta/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+
+      const withEmail = await create({ email: "New@Test.com", displayName: "New Person" });
+      expect(withEmail.status).toBe(200);
+      const body = await withEmail.json();
+      expect(body.emailed).toBe(true);
+      expect(body.invite.email).toBe("new@test.com");
+
+      const linkOnly = await create({ displayName: "Hand delivered" });
+      expect((await linkOnly.json()).emailed).toBe(false);
+
+      expect((await create({ email: "Alexander Zito" })).status).toBe(400);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued.map((e) => e.to)).toEqual(["new@test.com"]);
+      expect(queued[0].html).toContain(body.inviteUrl);
+    });
+
+    it("refuses revoked invites", async () => {
+      const { admin, token } = await adminToken();
+      const invite = storage.createInvite({ token: "gone-tok", email: "gone@test.com", createdBy: admin.id });
+      storage.revokeInvite(invite.id);
+      expect((await resend(token, invite.id)).status).toBe(400);
+      expect(db.all(sql`SELECT 1 FROM email_queue`)).toHaveLength(0);
     });
   });
 
@@ -856,6 +1173,214 @@ describe("API Integration Tests", () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.success).toBe(true);
+    });
+  });
+
+  // ===== PRODUCTIONS: status changes =====
+  describe("PATCH /api/productions/:id", () => {
+    async function login(handle: string) {
+      const user = storage.createUser({ handle, email: `${handle}@test.com`, passwordHash: hashPassword("pw123456") });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "pw123456" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    function patch(id: number, token: string, body: unknown) {
+      return fetch(`${baseUrl}/api/productions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("lets the owner move a production out of pre-production", async () => {
+      const { user, token } = await login("owner1");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      expect(prod.status).toBe("pre_production");
+
+      const res = await patch(prod.id, token, { status: "in_production" });
+      expect(res.status).toBe(200);
+      expect(storage.getProduction(prod.id)?.status).toBe("in_production");
+    });
+
+    it("rejects unknown statuses and fields outside the allowlist", async () => {
+      const { user, token } = await login("owner2");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await patch(prod.id, token, { status: "shipped" })).status).toBe(400);
+      expect((await patch(prod.id, token, { creatorId: 999 })).status).toBe(400);
+      expect(storage.getProduction(prod.id)?.creatorId).toBe(user.id);
+    });
+
+    it("refuses status changes from someone who doesn't own the production", async () => {
+      const { user } = await login("owner3");
+      const { token: otherToken } = await login("stranger");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await patch(prod.id, otherToken, { status: "wrapped" })).status).toBe(403);
+      expect(storage.getProduction(prod.id)?.status).toBe("pre_production");
+    });
+  });
+
+  // ===== PRODUCTIONS: cover images =====
+  describe("production cover images", () => {
+    // Smallest valid PNG (1x1); the server checks the declared type, not pixels.
+    const PNG = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+
+    async function login(handle: string) {
+      const user = storage.createUser({ handle, email: `${handle}@test.com`, passwordHash: hashPassword("pw123456") });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `${handle}@test.com`, password: "pw123456" }),
+      });
+      const { token } = await res.json();
+      return { user, token };
+    }
+
+    function upload(id: number, token: string, type = "image/png", name = "cover.png") {
+      const body = new FormData();
+      body.append("cover", new Blob([PNG], { type }), name);
+      return fetch(`${baseUrl}/api/productions/${id}/cover`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+    }
+
+    function onDisk(url: string) {
+      return existsSync(join(process.env.UPLOADS_DIR!, "productions", url.split("/").pop()!));
+    }
+
+    it("lets the owner add, replace and remove a cover, cleaning up old files", async () => {
+      const { user, token } = await login("coverowner");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      const first = await upload(prod.id, token);
+      expect(first.status).toBe(200);
+      const firstUrl = (await first.json()).coverUrl as string;
+      expect(firstUrl).toMatch(/^\/uploads\/productions\/[0-9a-f-]+\.png$/);
+      expect(onDisk(firstUrl)).toBe(true);
+
+      const second = await upload(prod.id, token, "image/jpeg", "still.jpg");
+      const secondUrl = (await second.json()).coverUrl as string;
+      expect(secondUrl).toMatch(/\.jpg$/);
+      expect(onDisk(firstUrl)).toBe(false);
+
+      const removed = await fetch(`${baseUrl}/api/productions/${prod.id}/cover`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(removed.status).toBe(200);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
+      expect(onDisk(secondUrl)).toBe(false);
+    });
+
+    it("names files by their image type, not the uploaded filename", async () => {
+      const { user, token } = await login("covername");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      const res = await upload(prod.id, token, "image/png", "evil.html");
+      expect((await res.json()).coverUrl).toMatch(/\.png$/);
+    });
+
+    it("names profile photos by their image type too", async () => {
+      const { token } = await login("avatarname");
+      const body = new FormData();
+      body.append("avatar", new Blob([PNG], { type: "image/png" }), "evil.html");
+      const res = await fetch(`${baseUrl}/api/profile/avatar`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()).url).toMatch(/^\/uploads\/profiles\/[0-9a-f-]+\.png$/);
+    });
+
+    it("rejects files that aren't JPEG, PNG or WebP", async () => {
+      const { user, token } = await login("covertype");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+      const res = await upload(prod.id, token, "image/svg+xml", "cover.svg");
+      expect(res.status).toBe(400);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
+    });
+
+    it("refuses uploads from someone who doesn't own the production", async () => {
+      const { user } = await login("coverowner2");
+      const { token: otherToken } = await login("coverstranger");
+      const prod = storage.createProduction({ creatorId: user.id, title: "Zucchini", type: "feature" });
+
+      expect((await upload(prod.id, otherToken)).status).toBe(403);
+      expect(storage.getProduction(prod.id)?.coverUrl).toBeNull();
+    });
+  });
+
+  // ===== ADMIN: re-invite with a new link =====
+  describe("POST /api/admin/beta/invites/:id/reinvite", () => {
+    async function adminToken() {
+      const admin = storage.createUser({ handle: "reinviter", email: "reinviter@test.com", passwordHash: hashPassword("admin123"), isAdmin: true });
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "reinviter@test.com", password: "admin123" }),
+      });
+      return { admin, token: (await res.json()).token as string };
+    }
+    const reinvite = (token: string, id: number, email?: string) =>
+      fetch(`${baseUrl}/api/admin/beta/invites/${id}/reinvite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(email === undefined ? {} : { email }),
+      });
+    const isValid = async (tok: string) => (await fetch(`${baseUrl}/api/beta/invite/${tok}`)).status === 200;
+
+    it("emails a revoked person a new link and keeps the old one dead", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "august-tok", email: "aug@test.com", displayName: "August Person", role: "Gaffer", createdBy: admin.id });
+      const linked = storage.createBetaRequest({ email: "aug@test.com" });
+      storage.updateBetaRequest(linked.id, { status: "invited", inviteId: old.id });
+      storage.revokeInvite(old.id);
+
+      const res = await reinvite(token, old.id);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.invite.token).not.toBe("august-tok");
+      expect(body.invite.displayName).toBe("August Person");
+      expect(body.invite.role).toBe("Gaffer");
+
+      expect(await isValid("august-tok")).toBe(false);
+      expect(await isValid(body.invite.token)).toBe(true);
+      expect(storage.getBetaRequest(linked.id)?.inviteId).toBe(body.invite.id);
+
+      const queued = db.all<{ to: string; html: string }>(sql`SELECT "to", html FROM email_queue`);
+      expect(queued).toHaveLength(1);
+      expect(queued[0].to).toBe("aug@test.com");
+      expect(queued[0].html).toContain(`/auth?invite=${body.invite.token}`);
+      expect(queued[0].html).not.toContain("august-tok");
+    });
+
+    it("revokes an active invite before replacing it, and fixes a bad address", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "active-tok", email: "Name Not Email", createdBy: admin.id });
+
+      expect((await reinvite(token, old.id)).status).toBe(400);
+      const res = await reinvite(token, old.id, "Fixed@Test.com");
+      expect(res.status).toBe(200);
+      expect((await res.json()).email).toBe("fixed@test.com");
+      expect(await isValid("active-tok")).toBe(false);
+    });
+
+    it("refuses to re-invite an invite that was already used", async () => {
+      const { admin, token } = await adminToken();
+      const old = storage.createInvite({ token: "used-tok", email: "used@test.com", createdBy: admin.id });
+      storage.updateInvite(old.id, { status: "used", usedCount: 1 });
+      expect((await reinvite(token, old.id)).status).toBe(400);
     });
   });
 });

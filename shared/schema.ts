@@ -8,6 +8,12 @@ export const users = sqliteTable("users", {
   handle: text("handle").notNull().unique(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  // Google's stable subject id. Present only for accounts created via / linked
+  // to Google sign-in; those rows still carry an unguessable random
+  // password_hash so the password path can never authenticate them.
+  googleId: text("google_id"),
+  // Member can turn off the "you have a new message" email; in-app still shows it.
+  emailOnMessage: integer("email_on_message", { mode: "boolean" }).default(true),
   isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
   accessStatus: text("access_status").default("active"), // pending | active | revoked
   invitedBy: integer("invited_by"),
@@ -20,6 +26,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   handle: true,
   email: true,
   passwordHash: true,
+  googleId: true,
   isAdmin: true,
   accessStatus: true,
   invitedBy: true,
@@ -64,6 +71,7 @@ export const profiles = sqliteTable("profiles", {
   coverUrl: text("cover_url"),
   themePreset: text("theme_preset").default("cinema_gold"),
   accentColor: text("accent_color"),
+  pageConfig: text("page_config"), // JSON, validated by server/lib/page-config.ts
   videoLinks: text("video_links").default("[]"), // JSON array of {provider, url, title}
   socialLinks: text("social_links").default("{}"), // JSON object of platform -> url
   imdbCredits: text("imdb_credits").default("[]"), // JSON array of {title, year, role, rating}
@@ -77,6 +85,10 @@ export const profiles = sqliteTable("profiles", {
   subscriptionTier: text("subscription_tier").default("free"), // free | pro | pro_plus
   subscriptionStatus: text("subscription_status").default("inactive"), // inactive | active | past_due | canceled
   w9Collected: integer("w9_collected", { mode: "boolean" }).default(false),
+  // Connect readiness lives here, not in subscription_status: that column belongs
+  // to the subscription flow and Connect used to overwrite it.
+  connectChargesEnabled: integer("connect_charges_enabled", { mode: "boolean" }).default(false),
+  connectPayoutsEnabled: integer("connect_payouts_enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -98,6 +110,7 @@ export const insertProfileSchema = createInsertSchema(profiles).pick({
   coverUrl: true,
   themePreset: true,
   accentColor: true,
+  pageConfig: true,
   videoLinks: true,
   socialLinks: true,
   dayRate: true,
@@ -126,6 +139,7 @@ export const productions = sqliteTable("productions", {
   location: text("location"),
   status: text("status").default("pre_production"), // pre_production, in_production, post, wrapped
   budget: integer("budget"),
+  coverUrl: text("cover_url"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -479,3 +493,269 @@ export const w9Forms = sqliteTable("w9_forms", {
 
 export type W9Form = typeof w9Forms.$inferSelect;
 export type InsertW9Form = typeof w9Forms.$inferInsert;
+
+// ===== INVOICES =====
+// Stripe is the source of truth for PAYMENT STATE (status, amounts paid).
+// This table is the source of truth for WHO/WHAT/WHY (member linkage,
+// production association, internal notes) and mirrors Stripe's state.
+//
+// issuerUserId is NULL when THE FVC is the one billing. It exists now so
+// member-to-member invoicing (crew billing productions via Connect) can be
+// added later without a schema rewrite.
+export const invoices = sqliteTable("invoices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull().unique(), // FVC-2026-0041, shown in UI + emails
+  stripeInvoiceId: text("stripe_invoice_id").unique(), // NULL while local draft
+  stripeCustomerId: text("stripe_customer_id"), // encrypted at rest
+
+  issuerUserId: integer("issuer_user_id").references(() => users.id), // NULL = FVC
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  // Snapshotted at send time. A member can change their profile email after
+  // being invoiced; the invoice is a financial record and must show what was
+  // true when it was issued. Stripe freezes customer_email on finalize too.
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name").notNull(),
+
+  productionId: integer("production_id").references(() => productions.id),
+
+  status: text("status").notNull().default("draft"), // draft | open | paid | void | uncollectible
+  currency: text("currency").notNull().default("usd"),
+  subtotalCents: integer("subtotal_cents").notNull().default(0),
+  totalCents: integer("total_cents").notNull().default(0),
+  amountPaidCents: integer("amount_paid_cents").notNull().default(0),
+  amountDueCents: integer("amount_due_cents").notNull().default(0),
+
+  dueDate: integer("due_date", { mode: "timestamp" }),
+  issuedAt: integer("issued_at", { mode: "timestamp" }),
+  paidAt: integer("paid_at", { mode: "timestamp" }),
+  voidedAt: integer("voided_at", { mode: "timestamp" }),
+
+  hostedInvoiceUrl: text("hosted_invoice_url"), // Stripe pay page, post-finalize
+  invoicePdfUrl: text("invoice_pdf_url"),
+
+  memo: text("memo"), // shown to recipient
+  internalNote: text("internal_note"), // admin-only, MUST never be emailed
+
+  remindersEnabled: integer("reminders_enabled", { mode: "boolean" }).notNull().default(true),
+  reminderProfile: text("reminder_profile"), // JSON: [{offsetDays, tone}]
+
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+// ===== INVOICE LINE ITEMS =====
+export const invoiceLineItems = sqliteTable("invoice_line_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  stripeInvoiceItemId: text("stripe_invoice_item_id"),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitAmountCents: integer("unit_amount_cents").notNull(),
+  amountCents: integer("amount_cents").notNull(), // quantity * unitAmountCents, computed server-side
+  position: integer("position").notNull().default(0),
+});
+
+export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
+export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+// ===== INVOICE REMINDERS (auto follow-up queue) =====
+// One row per scheduled follow-up. UNIQUE(invoice_id, offset_days) is the
+// idempotency guard — a double-run of the scheduler cannot duplicate a reminder.
+export const invoiceReminders = sqliteTable("invoice_reminders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  offsetDays: integer("offset_days").notNull(), // negative = before due, 0 = on due, positive = overdue
+  sendAt: integer("send_at", { mode: "timestamp" }).notNull(),
+  tone: text("tone").notNull().default("neutral"), // friendly | neutral | firm | final
+  status: text("status").notNull().default("pending"), // pending | sent | skipped | failed | cancelled
+  sentAt: integer("sent_at", { mode: "timestamp" }),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+});
+
+export type InvoiceReminder = typeof invoiceReminders.$inferSelect;
+export type InsertInvoiceReminder = typeof invoiceReminders.$inferInsert;
+
+// ===== INVOICE EVENTS (append-only audit trail) =====
+export const invoiceEvents = sqliteTable("invoice_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(), // created | sent | reminder_sent | paid | payment_failed | voided | note
+  source: text("source").notNull(), // admin | stripe_webhook | dunning_worker | system
+  actorId: integer("actor_id").references(() => users.id),
+  payload: text("payload").default("{}"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type InvoiceEvent = typeof invoiceEvents.$inferSelect;
+export type InsertInvoiceEvent = typeof invoiceEvents.$inferInsert;
+
+// ===== STRIPE WEBHOOK EVENTS (dedupe) =====
+// Stripe retries for up to 3 days with exponential backoff and CAN deliver the
+// same event more than once. Without this table, a redelivered invoice.paid
+// would re-run side effects.
+export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
+  id: text("id").primaryKey(), // Stripe's evt_... id
+  type: text("type").notNull(),
+  receivedAt: integer("received_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  processedAt: integer("processed_at", { mode: "timestamp" }),
+  error: text("error"),
+});
+
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
+export type InsertStripeWebhookEvent = typeof stripeWebhookEvents.$inferInsert;
+
+// One row per connected app per member. Access and refresh tokens hang off it,
+// so revoking the grant ends every token at once instead of racing them.
+export const oauthGrants = sqliteTable("oauth_grants", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull(),
+  scopes: text("scopes").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+});
+
+// ===== MCP ACCESS TOKENS =====
+// Personal access tokens that let a member's own AI client (Claude Desktop,
+// Claude Code, ...) call the /mcp endpoint as them. Only a SHA-256 of the
+// token is stored; the plaintext is shown once at creation.
+export const mcpTokens = sqliteTable("mcp_tokens", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  tokenPrefix: text("token_prefix").notNull(), // first chars, so the UI can tell tokens apart
+  scopes: text("scopes").notNull().default("[]"), // JSON array of McpScope
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+  // Explicit, not inferred from the name: a member can name a personal token
+  // anything, including "OAuth: ...".
+  kind: text("kind").notNull().default("personal"), // personal | oauth_access
+  oauthGrantId: integer("oauth_grant_id").references(() => oauthGrants.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type McpToken = typeof mcpTokens.$inferSelect;
+export type InsertMcpToken = typeof mcpTokens.$inferInsert;
+
+// OAuth 2.1 for MCP connectors (claude.ai etc.). Access tokens are ordinary
+// mcp_tokens rows, so they show up in, and can be revoked from, the
+// Connections page; these tables hold only the authorization-flow state.
+export const oauthClients = sqliteTable("oauth_clients", {
+  clientId: text("client_id").primaryKey(),
+  clientJson: text("client_json").notNull(), // full OAuthClientInformationFull
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }), // bounds public client registration storage
+});
+
+// A started-but-undecided authorization request, parked while the member logs
+// in and approves. The random id is the only thing the consent page carries.
+export const oauthPending = sqliteTable("oauth_pending", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull(),
+  params: text("params").notNull(), // JSON: state, scopes, codeChallenge, redirectUri
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+});
+
+export const oauthCodes = sqliteTable("oauth_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  clientId: text("client_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  usedAt: integer("used_at", { mode: "timestamp" }),
+});
+
+export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  clientId: text("client_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  // The mcp_tokens row issued alongside this refresh token. Revoking that
+  // access token on the Connections page must also end the grant.
+  accessTokenId: integer("access_token_id").notNull(),
+  oauthGrantId: integer("oauth_grant_id").references(() => oauthGrants.id, { onDelete: "cascade" }),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  revokedAt: integer("revoked_at", { mode: "timestamp" }),
+});
+
+export type OAuthGrantRow = typeof oauthGrants.$inferSelect;
+export type OAuthClientRow = typeof oauthClients.$inferSelect;
+export type OAuthPendingRow = typeof oauthPending.$inferSelect;
+export type OAuthCodeRow = typeof oauthCodes.$inferSelect;
+export type OAuthRefreshRow = typeof oauthRefreshTokens.$inferSelect;
+
+// ===== PRODUCTION PAYMENTS (Stripe Connect) =====
+// A payment tied to a production, paid to a member's own Stripe account (direct
+// charge), so the member is the merchant and FVC only takes the platform fee.
+//  - receive: the production owner is paid (payer is anyone with the link)
+//  - pay_crew: the production owner pays a crew member
+export const productionPayments = sqliteTable("production_payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  productionId: integer("production_id").notNull().references(() => productions.id),
+  kind: text("kind").notNull(), // receive | pay_crew
+  payeeUserId: integer("payee_user_id").notNull().references(() => users.id),
+  payerUserId: integer("payer_user_id").references(() => users.id), // NULL = anyone with the link
+  amountCents: integer("amount_cents").notNull(),
+  feeCents: integer("fee_cents").notNull(),
+  currency: text("currency").notNull().default("usd"),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"), // pending | paid | canceled
+  stripeSessionId: text("stripe_session_id"),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  paidAt: integer("paid_at", { mode: "timestamp" }),
+});
+
+export type ProductionPayment = typeof productionPayments.$inferSelect;
+
+// ===== MEMBER MESSAGES =====
+// One row per message; a "conversation" is just the pair of members, so there is
+// no thread table to keep in sync.
+export const messages = sqliteTable("messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  senderId: integer("sender_id").notNull().references(() => users.id),
+  recipientId: integer("recipient_id").notNull().references(() => users.id),
+  body: text("body").notNull(),
+  readAt: integer("read_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = typeof messages.$inferInsert;
+
+// ===== MEMBER NETWORK (follow / connect / block) =====
+// Follow is one-way and instant. A connection is one row per pair (requester ->
+// addressee) that is 'pending' until the addressee accepts. Blocks are one-way
+// but sever every relationship between the two in both directions.
+export const follows = sqliteTable("follows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  followerId: integer("follower_id").notNull().references(() => users.id),
+  followeeId: integer("followee_id").notNull().references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const memberConnections = sqliteTable("member_connections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  requesterId: integer("requester_id").notNull().references(() => users.id),
+  addresseeId: integer("addressee_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("pending"), // pending | accepted
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  respondedAt: integer("responded_at", { mode: "timestamp" }),
+});
+
+export const memberBlocks = sqliteTable("member_blocks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  blockerId: integer("blocker_id").notNull().references(() => users.id),
+  blockedId: integer("blocked_id").notNull().references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});

@@ -45,7 +45,8 @@ export async function createTestServer(): Promise<{
   const app = express();
 
   // Same middleware stack as server/index.ts
-  app.use(express.json());
+  // Same raw-body capture as server/index.ts: Stripe signature checks need it.
+  app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
   app.use(express.urlencoded({ extended: false }));
   app.use(securityHeaders);
   app.use(sanitize);

@@ -15,6 +15,10 @@ import {
   LogOut,
   Film,
   Shield,
+  Receipt,
+  FileText,
+  Plug,
+  MessageSquare,
 } from "lucide-react";
 import NotFound from "./not-found";
 
@@ -23,6 +27,10 @@ const NAV_ITEMS = [
   { path: "/app/profile", label: "My Profile", icon: User },
   { path: "/app/productions", label: "Productions", icon: Clapperboard },
   { path: "/crew", label: "Crew Finder", icon: Users },
+  { path: "/app/payments", label: "Billing", icon: FileText },
+  { path: "/app/network", label: "My Network", icon: Users },
+  { path: "/app/messages", label: "Messages", icon: MessageSquare },
+  { path: "/app/connections", label: "AI Connections", icon: Plug },
 ];
 
 function SidebarLink({ path, label, icon: Icon }: { path: string; label: string; icon: typeof User }) {
@@ -73,7 +81,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <SidebarLink key={item.path} {...item} />
           ))}
           {user?.isAdmin && (
-            <SidebarLink path="/app/admin" label="Beta Admin" icon={Shield} />
+            <>
+              <SidebarLink path="/app/admin/invoices" label="Invoices" icon={Receipt} />
+              <SidebarLink path="/app/admin" label="Beta Admin" icon={Shield} />
+            </>
           )}
         </nav>
 

@@ -6,6 +6,8 @@ import {
   passwordResets, emailVerifications, blockedIps, newsCache,
   notifications,
   subscriptionTiers, payments, w9Forms,
+  invoices, invoiceLineItems, invoiceReminders, invoiceEvents, stripeWebhookEvents,
+  mcpTokens, messages, productionPayments, oauthGrants, oauthClients, oauthPending, oauthCodes, oauthRefreshTokens,
 } from '@shared/schema';
 import type {
   User, InsertUser,
@@ -28,9 +30,15 @@ import type {
   SubscriptionTier, InsertSubscriptionTier,
   Payment, InsertPayment,
   W9Form, InsertW9Form,
+  Invoice, InsertInvoice,
+  InvoiceLineItem, InsertInvoiceLineItem,
+  InvoiceReminder, InsertInvoiceReminder,
+  InvoiceEvent, InsertInvoiceEvent,
+  McpToken, InsertMcpToken, Message, ProductionPayment,
+  OAuthClientRow, OAuthPendingRow, OAuthCodeRow, OAuthRefreshRow, OAuthGrantRow,
 } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, and, or, desc, sql, gte, lt, getTableColumns } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, gte, lte, lt, inArray, getTableColumns } from "drizzle-orm";
 import { sqlite } from "./migrate";
 import { decryptSensitive } from "./lib/encryption";
 
@@ -41,6 +49,7 @@ export interface IStorage {
   getUser(id: number): User | undefined;
   getUserByHandle(handle: string): User | undefined;
   getUserByEmail(email: string): User | undefined;
+  getUserByGoogleId(googleId: string): User | undefined;
   createUser(user: InsertUser): User;
 
   // Sessions
@@ -60,7 +69,7 @@ export interface IStorage {
   getProductionsByUser(userId: number): Production[];
   getProduction(id: number): Production | undefined;
   createProduction(prod: InsertProduction): Production;
-  updateProduction(id: number, data: Partial<InsertProduction>): Production | undefined;
+  updateProduction(id: number, data: Partial<InsertProduction> & { coverUrl?: string | null }): Production | undefined;
 
   // Production Crew
   getCrewByProduction(productionId: number): (ProductionCrew & { profile?: Profile })[];
@@ -69,9 +78,50 @@ export interface IStorage {
   updateCrewMember(id: number, data: Partial<InsertProductionCrew>): ProductionCrew | undefined;
   removeCrewMember(id: number): void;
 
+  // MCP access tokens
+  createMcpToken(data: InsertMcpToken): McpToken;
+  getMcpTokenByHash(tokenHash: string): McpToken | undefined;
+  listMcpTokens(userId: number): McpToken[];
+  revokeMcpToken(id: number, userId: number): boolean;
+  touchMcpToken(id: number): void;
+  getMcpToken(id: number): McpToken | undefined;
+  saveOAuthClient(clientId: string, clientJson: string): void;
+  getOAuthClient(clientId: string): OAuthClientRow | undefined;
+  createOAuthPending(row: OAuthPendingRow): void;
+  getOAuthPending(id: string): OAuthPendingRow | undefined;
+  deleteOAuthPending(id: string): void;
+  createOAuthCode(row: Omit<OAuthCodeRow, "usedAt">): void;
+  peekOAuthCode(codeHash: string): OAuthCodeRow | undefined;
+  consumeOAuthCode(codeHash: string): OAuthCodeRow | undefined;
+  createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void;
+  getOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
+  consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined;
+  createOAuthGrant(data: { userId: number; clientId: string; scopes: string }): OAuthGrantRow;
+  getOAuthGrant(id: number): OAuthGrantRow | undefined;
+  listMcpTokensForGrant(grantId: number): McpToken[];
+  revokeOAuthGrant(id: number): void;
+  listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }>;
+  purgeExpiredOAuth(): void;
+
+  // Production payments (Stripe Connect)
+  createProductionPayment(data: typeof productionPayments.$inferInsert): ProductionPayment;
+  getProductionPayment(id: number): ProductionPayment | undefined;
+  listProductionPayments(productionId: number): ProductionPayment[];
+  setProductionPaymentSession(id: number, sessionId: string): void;
+  cancelProductionPayment(id: number): boolean;
+  markProductionPaymentPaid(id: number, paymentIntentId: string | null): boolean;
+
+  // Member messages (read side; sending lives in message-routes)
+  listConversations(userId: number): Array<{ otherId: number; last: Message; unread: number }>;
+  getThread(userId: number, otherId: number, limit?: number): Message[];
+  countUnreadMessages(userId: number): number;
+
   // Credits
   getCreditsByProfile(profileId: number): Credit[];
   createCredit(credit: InsertCredit): Credit;
+  getCredit(id: number): Credit | undefined;
+  updateCredit(id: number, data: Partial<Pick<InsertCredit, "productionTitle" | "role" | "year" | "format">>): Credit | undefined;
+  deleteCredit(id: number): boolean;
 
   // Beta Invites
   createInvite(data: { token: string; email?: string; displayName?: string; role?: string; maxUses?: number; createdBy: number; notes?: string }): BetaInvite;
@@ -175,6 +225,8 @@ export interface IStorage {
     subscriptionTier?: string;
     subscriptionStatus?: string;
     w9Collected?: boolean;
+    connectChargesEnabled?: boolean;
+    connectPayoutsEnabled?: boolean;
   }): Profile | undefined;
 
   // ===== CREW FINDER PAGINATION (PRD-006) =====
@@ -191,6 +243,37 @@ export interface IStorage {
 
   getProfileByStripeAccountId(accountId: string): Profile | undefined;
   getProfileByStripeCustomerId(customerId: string): Profile | undefined;
+
+  // Invoicing
+  createInvoice(data: InsertInvoice): Invoice;
+  getInvoice(id: number): Invoice | undefined;
+  getInvoiceByStripeId(stripeInvoiceId: string): Invoice | undefined;
+  updateInvoice(id: number, data: Partial<InsertInvoice>): Invoice | undefined;
+  deleteInvoice(id: number): boolean;
+  listInvoices(filters?: InvoiceFilters): Invoice[];
+  listInvoicesForUser(userId: number): Invoice[];
+  nextInvoicePublicId(): string;
+  getInvoiceStats(): InvoiceStats;
+
+  addLineItem(data: InsertInvoiceLineItem): InvoiceLineItem;
+  getLineItems(invoiceId: number): InvoiceLineItem[];
+  deleteLineItem(invoiceId: number, lineItemId: number): boolean;
+  updateLineItemStripeId(lineItemId: number, stripeInvoiceItemId: string): void;
+  recalcInvoiceTotals(invoiceId: number): Invoice | undefined;
+
+  createReminder(data: InsertInvoiceReminder): InvoiceReminder | undefined;
+  getReminders(invoiceId: number): InvoiceReminder[];
+  getDueReminders(now: Date, limit?: number): InvoiceReminder[];
+  updateReminder(id: number, data: Partial<InsertInvoiceReminder>): void;
+  cancelPendingReminders(invoiceId: number): number;
+  deletePendingReminders(invoiceId: number): number;
+
+  logInvoiceEvent(data: InsertInvoiceEvent): void;
+  getInvoiceEvents(invoiceId: number): InvoiceEvent[];
+
+  /** Returns false if this Stripe event has already been recorded. */
+  claimWebhookEvent(id: string, type: string): boolean;
+  markWebhookEventProcessed(id: string, error?: string): void;
 
   // ===== PRD-022v2: GDPR Export — Audit Logs & Analytics =====
   getSecurityLogsByUser(userId: number, limit?: number): SecurityAuditLog[];
@@ -209,6 +292,10 @@ export class DatabaseStorage implements IStorage {
 
   getUserByEmail(email: string): User | undefined {
     return db.select().from(users).where(eq(users.email, email)).get();
+  }
+
+  getUserByGoogleId(googleId: string): User | undefined {
+    return db.select().from(users).where(eq(users.googleId, googleId)).get();
   }
 
   createUser(insertUser: InsertUser): User {
@@ -309,7 +396,7 @@ export class DatabaseStorage implements IStorage {
     return db.insert(productions).values(prod).returning().get();
   }
 
-  updateProduction(id: number, data: Partial<InsertProduction>): Production | undefined {
+  updateProduction(id: number, data: Partial<InsertProduction> & { coverUrl?: string | null }): Production | undefined {
     db.update(productions).set(data).where(eq(productions.id, id)).run();
     return this.getProduction(id);
   }
@@ -340,9 +427,213 @@ export class DatabaseStorage implements IStorage {
     db.delete(productionCrew).where(eq(productionCrew.id, id)).run();
   }
 
+  // ===== MCP ACCESS TOKENS =====
+  createMcpToken(data: InsertMcpToken): McpToken {
+    return db.insert(mcpTokens).values(data).returning().get();
+  }
+
+  getMcpTokenByHash(tokenHash: string): McpToken | undefined {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.tokenHash, tokenHash)).get();
+  }
+
+  listMcpTokens(userId: number): McpToken[] {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.userId, userId)).orderBy(desc(mcpTokens.createdAt)).all();
+  }
+
+  // Scoped by userId so one member can never revoke another's token by id.
+  // Revoking a connected app's access token ends the whole grant: otherwise the
+  // refresh token would mint a replacement an hour later.
+  revokeMcpToken(id: number, userId: number): boolean {
+    const row = db.select().from(mcpTokens).where(and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId))).get();
+    if (!row) return false;
+    if (row.oauthGrantId) {
+      this.revokeOAuthGrant(row.oauthGrantId);
+      return !row.revokedAt;
+    }
+    const res = db.update(mcpTokens).set({ revokedAt: new Date() })
+      .where(and(eq(mcpTokens.id, id), sql`${mcpTokens.revokedAt} IS NULL`)).run();
+    return res.changes > 0;
+  }
+
+  touchMcpToken(id: number): void {
+    db.update(mcpTokens).set({ lastUsedAt: new Date() }).where(eq(mcpTokens.id, id)).run();
+  }
+
+  getMcpToken(id: number): McpToken | undefined {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.id, id)).get();
+  }
+
+  // ===== OAUTH (MCP connectors) =====
+  saveOAuthClient(clientId: string, clientJson: string): void {
+    db.insert(oauthClients).values({ clientId, clientJson }).run();
+  }
+
+  getOAuthClient(clientId: string): OAuthClientRow | undefined {
+    return db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId)).get();
+  }
+
+  createOAuthPending(row: OAuthPendingRow): void {
+    db.insert(oauthPending).values(row).run();
+  }
+
+  getOAuthPending(id: string): OAuthPendingRow | undefined {
+    return db.select().from(oauthPending).where(eq(oauthPending.id, id)).get();
+  }
+
+  deleteOAuthPending(id: string): void {
+    db.delete(oauthPending).where(eq(oauthPending.id, id)).run();
+  }
+
+  createOAuthCode(row: Omit<OAuthCodeRow, "usedAt">): void {
+    db.insert(oauthCodes).values(row).run();
+  }
+
+  peekOAuthCode(codeHash: string): OAuthCodeRow | undefined {
+    return db.select().from(oauthCodes).where(eq(oauthCodes.codeHash, codeHash)).get();
+  }
+
+  // Single UPDATE ... WHERE used_at IS NULL, so two racing exchanges of the
+  // same code can't both win.
+  consumeOAuthCode(codeHash: string): OAuthCodeRow | undefined {
+    return db.update(oauthCodes).set({ usedAt: new Date() })
+      .where(and(eq(oauthCodes.codeHash, codeHash), sql`${oauthCodes.usedAt} IS NULL`, gte(oauthCodes.expiresAt, new Date())))
+      .returning().get();
+  }
+
+  createOAuthRefresh(row: Omit<OAuthRefreshRow, "revokedAt">): void {
+    db.insert(oauthRefreshTokens).values(row).run();
+  }
+
+  getOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined {
+    return db.select().from(oauthRefreshTokens).where(eq(oauthRefreshTokens.tokenHash, tokenHash)).get();
+  }
+
+  // Rotation: a refresh token is good for exactly one exchange. Callers that
+  // need to tell "replayed" from "expired" use getOAuthRefresh first.
+  consumeOAuthRefresh(tokenHash: string): OAuthRefreshRow | undefined {
+    return db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
+      .where(and(eq(oauthRefreshTokens.tokenHash, tokenHash), sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
+      .returning().get();
+  }
+
+  createOAuthGrant(data: { userId: number; clientId: string; scopes: string }): OAuthGrantRow {
+    return db.insert(oauthGrants).values(data).returning().get();
+  }
+
+  getOAuthGrant(id: number): OAuthGrantRow | undefined {
+    return db.select().from(oauthGrants).where(eq(oauthGrants.id, id)).get();
+  }
+
+  listMcpTokensForGrant(grantId: number): McpToken[] {
+    return db.select().from(mcpTokens).where(eq(mcpTokens.oauthGrantId, grantId)).orderBy(desc(mcpTokens.createdAt), desc(mcpTokens.id)).all();
+  }
+
+  // One transaction so a grant is never half-revoked: its access tokens and
+  // refresh tokens all die together.
+  revokeOAuthGrant(id: number): void {
+    const now = new Date();
+    db.transaction((tx) => {
+      tx.update(oauthGrants).set({ revokedAt: now }).where(and(eq(oauthGrants.id, id), sql`${oauthGrants.revokedAt} IS NULL`)).run();
+      tx.update(mcpTokens).set({ revokedAt: now }).where(and(eq(mcpTokens.oauthGrantId, id), sql`${mcpTokens.revokedAt} IS NULL`)).run();
+      tx.update(oauthRefreshTokens).set({ revokedAt: now }).where(and(eq(oauthRefreshTokens.oauthGrantId, id), sql`${oauthRefreshTokens.revokedAt} IS NULL`)).run();
+    });
+  }
+
+  // A grant is live while it is unrevoked and still has a usable refresh token.
+  listLiveOAuthGrants(userId: number): Array<OAuthGrantRow & { refreshExpiresAt: Date }> {
+    const rows = db.select({ grant: oauthGrants, refreshExpiresAt: sql<number>`MAX(${oauthRefreshTokens.expiresAt})` })
+      .from(oauthGrants)
+      .innerJoin(oauthRefreshTokens, eq(oauthRefreshTokens.oauthGrantId, oauthGrants.id))
+      .where(and(eq(oauthGrants.userId, userId), sql`${oauthGrants.revokedAt} IS NULL`, sql`${oauthRefreshTokens.revokedAt} IS NULL`, gte(oauthRefreshTokens.expiresAt, new Date())))
+      .groupBy(oauthGrants.id)
+      .orderBy(desc(oauthGrants.createdAt)).all();
+    return rows.map((r) => ({ ...r.grant, refreshExpiresAt: new Date(r.refreshExpiresAt * 1000) }));
+  }
+
+  purgeExpiredOAuth(): void {
+    const now = new Date();
+    db.delete(oauthPending).where(lt(oauthPending.expiresAt, now)).run();
+    db.delete(oauthCodes).where(lt(oauthCodes.expiresAt, now)).run();
+  }
+
+  // ===== PRODUCTION PAYMENTS =====
+  createProductionPayment(data: typeof productionPayments.$inferInsert): ProductionPayment {
+    return db.insert(productionPayments).values(data).returning().get();
+  }
+
+  getProductionPayment(id: number): ProductionPayment | undefined {
+    return db.select().from(productionPayments).where(eq(productionPayments.id, id)).get();
+  }
+
+  listProductionPayments(productionId: number): ProductionPayment[] {
+    return db.select().from(productionPayments).where(eq(productionPayments.productionId, productionId))
+      .orderBy(desc(productionPayments.createdAt), desc(productionPayments.id)).all();
+  }
+
+  setProductionPaymentSession(id: number, sessionId: string): void {
+    db.update(productionPayments).set({ stripeSessionId: sessionId }).where(eq(productionPayments.id, id)).run();
+  }
+
+  // Only a pending payment can be canceled; a paid one is a financial record.
+  cancelProductionPayment(id: number): boolean {
+    return db.update(productionPayments).set({ status: "canceled" })
+      .where(and(eq(productionPayments.id, id), eq(productionPayments.status, "pending"))).run().changes > 0;
+  }
+
+  // Idempotent: a redelivered webhook finds it already paid and changes nothing.
+  markProductionPaymentPaid(id: number, paymentIntentId: string | null): boolean {
+    return db.update(productionPayments)
+      .set({ status: "paid", paidAt: new Date(), stripePaymentIntentId: paymentIntentId })
+      .where(and(eq(productionPayments.id, id), sql`${productionPayments.status} != 'paid'`)).run().changes > 0;
+  }
+
+  // ===== MESSAGES (read side) =====
+  // One row per other member, newest first. A conversation is just the pair.
+  listConversations(userId: number) {
+    const rows = db.select().from(messages)
+      .where(or(eq(messages.senderId, userId), eq(messages.recipientId, userId)))
+      .orderBy(desc(messages.createdAt), desc(messages.id)).all();
+    const byOther = new Map<number, { otherId: number; last: Message; unread: number }>();
+    for (const m of rows) {
+      const otherId = m.senderId === userId ? m.recipientId : m.senderId;
+      const entry = byOther.get(otherId) ?? { otherId, last: m, unread: 0 };
+      if (m.recipientId === userId && !m.readAt) entry.unread++;
+      byOther.set(otherId, entry);
+    }
+    return Array.from(byOther.values());
+  }
+
+  // Oldest first. Does not mark anything read: callers decide whether viewing counts.
+  getThread(userId: number, otherId: number, limit?: number): Message[] {
+    const q = db.select().from(messages)
+      .where(or(
+        and(eq(messages.senderId, userId), eq(messages.recipientId, otherId)),
+        and(eq(messages.senderId, otherId), eq(messages.recipientId, userId)),
+      ));
+    if (!limit) return q.orderBy(messages.createdAt, messages.id).all();
+    return q.orderBy(desc(messages.createdAt), desc(messages.id)).limit(limit).all().reverse();
+  }
+
+  countUnreadMessages(userId: number): number {
+    return db.select({ n: sql<number>`count(*)` }).from(messages)
+      .where(and(eq(messages.recipientId, userId), sql`${messages.readAt} IS NULL`)).get()?.n ?? 0;
+  }
+
   // ===== CREDITS =====
   getCreditsByProfile(profileId: number): Credit[] {
     return db.select().from(credits).where(eq(credits.profileId, profileId)).orderBy(desc(credits.year)).all();
+  }
+
+  getCredit(id: number): Credit | undefined {
+    return db.select().from(credits).where(eq(credits.id, id)).get();
+  }
+
+  updateCredit(id: number, data: Partial<Pick<InsertCredit, "productionTitle" | "role" | "year" | "format">>): Credit | undefined {
+    return db.update(credits).set(data).where(eq(credits.id, id)).returning().get();
+  }
+
+  deleteCredit(id: number): boolean {
+    return db.delete(credits).where(eq(credits.id, id)).run().changes > 0;
   }
 
   createCredit(credit: InsertCredit): Credit {
@@ -719,6 +1010,8 @@ export class DatabaseStorage implements IStorage {
     subscriptionTier?: string;
     subscriptionStatus?: string;
     w9Collected?: boolean;
+    connectChargesEnabled?: boolean;
+    connectPayoutsEnabled?: boolean;
   }): Profile | undefined {
     db.update(profiles).set({ ...data, updatedAt: new Date() }).where(eq(profiles.userId, userId)).run();
     return this.getProfile(userId);
@@ -812,6 +1105,249 @@ export class DatabaseStorage implements IStorage {
       return decrypted === customerId;
     });
   }
+
+  // ===== INVOICING =====
+
+  createInvoice(data: InsertInvoice): Invoice {
+    return db.insert(invoices).values(data).returning().get();
+  }
+
+  getInvoice(id: number): Invoice | undefined {
+    return db.select().from(invoices).where(eq(invoices.id, id)).get();
+  }
+
+  getInvoiceByStripeId(stripeInvoiceId: string): Invoice | undefined {
+    return db.select().from(invoices).where(eq(invoices.stripeInvoiceId, stripeInvoiceId)).get();
+  }
+
+  updateInvoice(id: number, data: Partial<InsertInvoice>): Invoice | undefined {
+    return db
+      .update(invoices)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(invoices.id, id))
+      .returning()
+      .get();
+  }
+
+  deleteInvoice(id: number): boolean {
+    const res = db.delete(invoices).where(eq(invoices.id, id)).run();
+    return res.changes > 0;
+  }
+
+  listInvoices(filters: InvoiceFilters = {}): Invoice[] {
+    const conditions = [];
+    if (filters.status) conditions.push(eq(invoices.status, filters.status));
+    if (filters.recipientUserId) conditions.push(eq(invoices.recipientUserId, filters.recipientUserId));
+    if (filters.productionId) conditions.push(eq(invoices.productionId, filters.productionId));
+    // "Overdue" is derived at read time, never stored — a stored flag goes
+    // stale the moment a due date passes without the job running.
+    if (filters.overdueOnly) {
+      conditions.push(eq(invoices.status, "open"));
+      conditions.push(lt(invoices.dueDate, new Date()));
+    }
+
+    return db
+      .select()
+      .from(invoices)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(invoices.createdAt))
+      .limit(filters.limit ?? 200)
+      .all();
+  }
+
+  listInvoicesForUser(userId: number): Invoice[] {
+    // Members never see their own drafts — a draft is not yet a real bill.
+    return db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.recipientUserId, userId), sql`${invoices.status} != 'draft'`))
+      .orderBy(desc(invoices.createdAt))
+      .all();
+  }
+
+  nextInvoicePublicId(): string {
+    const year = new Date().getFullYear();
+    const prefix = `FVC-${year}-`;
+    const last = db
+      .select({ publicId: invoices.publicId })
+      .from(invoices)
+      .where(sql`${invoices.publicId} LIKE ${prefix + "%"}`)
+      .orderBy(desc(invoices.publicId))
+      .limit(1)
+      .get();
+    const nextSeq = last ? parseInt(last.publicId.slice(prefix.length), 10) + 1 : 1;
+    return `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  }
+
+  getInvoiceStats(): InvoiceStats {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const open = db.select().from(invoices).where(eq(invoices.status, "open")).all();
+    const paidThisMonth = db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.status, "paid"), gte(invoices.paidAt, monthStart)))
+      .all();
+    const allPaid = db.select().from(invoices).where(eq(invoices.status, "paid")).all();
+
+    const daysToPay = allPaid
+      .filter((i) => i.issuedAt && i.paidAt)
+      .map((i) => (i.paidAt!.getTime() - i.issuedAt!.getTime()) / 86400000);
+
+    return {
+      outstandingCents: open.reduce((s, i) => s + i.amountDueCents, 0),
+      outstandingCount: open.length,
+      overdueCents: open
+        .filter((i) => i.dueDate && i.dueDate < now)
+        .reduce((s, i) => s + i.amountDueCents, 0),
+      overdueCount: open.filter((i) => i.dueDate && i.dueDate < now).length,
+      collectedThisMonthCents: paidThisMonth.reduce((s, i) => s + i.amountPaidCents, 0),
+      avgDaysToPay: daysToPay.length
+        ? Math.round((daysToPay.reduce((a, b) => a + b, 0) / daysToPay.length) * 10) / 10
+        : null,
+    };
+  }
+
+  addLineItem(data: InsertInvoiceLineItem): InvoiceLineItem {
+    return db.insert(invoiceLineItems).values(data).returning().get();
+  }
+
+  getLineItems(invoiceId: number): InvoiceLineItem[] {
+    return db
+      .select()
+      .from(invoiceLineItems)
+      .where(eq(invoiceLineItems.invoiceId, invoiceId))
+      .orderBy(asc(invoiceLineItems.position), asc(invoiceLineItems.id))
+      .all();
+  }
+
+  deleteLineItem(invoiceId: number, lineItemId: number): boolean {
+    const res = db
+      .delete(invoiceLineItems)
+      .where(and(eq(invoiceLineItems.id, lineItemId), eq(invoiceLineItems.invoiceId, invoiceId)))
+      .run();
+    return res.changes > 0;
+  }
+
+  updateLineItemStripeId(lineItemId: number, stripeInvoiceItemId: string): void {
+    db.update(invoiceLineItems)
+      .set({ stripeInvoiceItemId })
+      .where(eq(invoiceLineItems.id, lineItemId))
+      .run();
+  }
+
+  /** Recomputes totals from line items. Always server-side; client totals are never trusted. */
+  recalcInvoiceTotals(invoiceId: number): Invoice | undefined {
+    const items = this.getLineItems(invoiceId);
+    const subtotal = items.reduce((sum, li) => sum + li.amountCents, 0);
+    return this.updateInvoice(invoiceId, {
+      subtotalCents: subtotal,
+      totalCents: subtotal,
+      amountDueCents: subtotal,
+    });
+  }
+
+  /** Returns undefined if a reminder at this offset already exists (UNIQUE guard). */
+  createReminder(data: InsertInvoiceReminder): InvoiceReminder | undefined {
+    try {
+      return db.insert(invoiceReminders).values(data).returning().get();
+    } catch (err: any) {
+      if (String(err?.message || "").includes("UNIQUE")) return undefined;
+      throw err;
+    }
+  }
+
+  getReminders(invoiceId: number): InvoiceReminder[] {
+    return db
+      .select()
+      .from(invoiceReminders)
+      .where(eq(invoiceReminders.invoiceId, invoiceId))
+      .orderBy(asc(invoiceReminders.sendAt))
+      .all();
+  }
+
+  getDueReminders(now: Date, limit = 100): InvoiceReminder[] {
+    return db
+      .select()
+      .from(invoiceReminders)
+      .where(and(eq(invoiceReminders.status, "pending"), lte(invoiceReminders.sendAt, now)))
+      .orderBy(asc(invoiceReminders.sendAt))
+      .limit(limit)
+      .all();
+  }
+
+  updateReminder(id: number, data: Partial<InsertInvoiceReminder>): void {
+    db.update(invoiceReminders).set(data).where(eq(invoiceReminders.id, id)).run();
+  }
+
+  cancelPendingReminders(invoiceId: number): number {
+    const res = db
+      .update(invoiceReminders)
+      .set({ status: "cancelled" })
+      .where(and(eq(invoiceReminders.invoiceId, invoiceId), eq(invoiceReminders.status, "pending")))
+      .run();
+    return res.changes;
+  }
+
+  deletePendingReminders(invoiceId: number): number {
+    const res = db
+      .delete(invoiceReminders)
+      .where(and(eq(invoiceReminders.invoiceId, invoiceId), eq(invoiceReminders.status, "pending")))
+      .run();
+    return res.changes;
+  }
+
+  logInvoiceEvent(data: InsertInvoiceEvent): void {
+    db.insert(invoiceEvents).values(data).run();
+  }
+
+  getInvoiceEvents(invoiceId: number): InvoiceEvent[] {
+    return db
+      .select()
+      .from(invoiceEvents)
+      .where(eq(invoiceEvents.invoiceId, invoiceId))
+      .orderBy(desc(invoiceEvents.createdAt))
+      .all();
+  }
+
+  /**
+   * Atomically claim a Stripe event for processing.
+   * Returns false if we've seen this event ID before — Stripe redelivers,
+   * and re-running side effects on a redelivered invoice.paid would be bad.
+   */
+  claimWebhookEvent(id: string, type: string): boolean {
+    const res = sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO stripe_webhook_events (id, type, received_at) VALUES (?, ?, ?)`
+      )
+      .run(id, type, Date.now());
+    return res.changes > 0;
+  }
+
+  markWebhookEventProcessed(id: string, error?: string): void {
+    db.update(stripeWebhookEvents)
+      .set({ processedAt: new Date(), error: error ?? null })
+      .where(eq(stripeWebhookEvents.id, id))
+      .run();
+  }
+}
+
+export interface InvoiceFilters {
+  status?: string;
+  recipientUserId?: number;
+  productionId?: number;
+  overdueOnly?: boolean;
+  limit?: number;
+}
+
+export interface InvoiceStats {
+  outstandingCents: number;
+  outstandingCount: number;
+  overdueCents: number;
+  overdueCount: number;
+  collectedThisMonthCents: number;
+  avgDaysToPay: number | null;
 }
 
 export const storage = new DatabaseStorage();

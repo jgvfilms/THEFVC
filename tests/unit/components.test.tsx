@@ -7,7 +7,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 
@@ -152,6 +152,13 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
   };
 });
 
+// CrewFinder renders inside LandingShell, whose nav reads the signed-in user.
+// In the app AuthProvider supplies it; here a signed-out visitor is enough.
+vi.mock("@/lib/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth")>();
+  return { ...actual, useAuth: () => ({ user: null }) };
+});
+
 describe("CrewFinder", () => {
   let CrewFinder: typeof import("@/pages/crew-finder").CrewFinder;
   let useQuery: typeof import("@tanstack/react-query").useQuery;
@@ -178,8 +185,8 @@ describe("CrewFinder", () => {
 
     render(<CrewFinder />);
 
-    expect(screen.getByText("Crew Finder")).toBeInTheDocument();
-    expect(screen.getByText("Find verified crew by role, location, skills, and availability.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /find your crew/i })).toBeInTheDocument();
+    expect(screen.getByText("Search FVC members by role, city, skills and availability.")).toBeInTheDocument();
     expect(screen.getByTestId("input-search-city")).toBeInTheDocument();
     expect(screen.getByTestId("select-role-filter")).toBeInTheDocument();
   });
@@ -189,9 +196,8 @@ describe("CrewFinder", () => {
 
     render(<CrewFinder />);
 
-    // Should show 4 skeleton loaders
-    const skeletons = document.querySelectorAll(".animate-pulse");
-    expect(skeletons.length).toBeGreaterThanOrEqual(4);
+    expect(document.querySelectorAll(".crew-skeleton").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("Loading crew…")).toBeInTheDocument();
   });
 
   it("should render empty state when no profiles match", () => {
@@ -199,7 +205,7 @@ describe("CrewFinder", () => {
 
     render(<CrewFinder />);
 
-    expect(screen.getByText("No crew found. Try adjusting your filters.")).toBeInTheDocument();
+    expect(screen.getByText("No crew match those filters. Try fewer filters.")).toBeInTheDocument();
   });
 
   it("should render profile cards when data is available", () => {
@@ -225,12 +231,14 @@ describe("CrewFinder", () => {
 
     render(<CrewFinder />);
 
-    expect(screen.getByText("Sarah Kowalski")).toBeInTheDocument();
-    expect(screen.getByText("Director of Photography")).toBeInTheDocument();
-    expect(screen.getByText("Brooklyn, NY")).toBeInTheDocument();
-    expect(screen.getByText("$850/day")).toBeInTheDocument();
-    expect(screen.getByText("Available")).toBeInTheDocument();
-    expect(screen.getByText(/1 result/)).toBeInTheDocument();
+    // The role also appears as a filter option, so check inside the result row.
+    const card = within(screen.getByTestId("card-crew-1"));
+    expect(card.getByText("Sarah Kowalski")).toBeInTheDocument();
+    expect(card.getByText("Director of Photography")).toBeInTheDocument();
+    expect(card.getByText("Brooklyn, NY")).toBeInTheDocument();
+    expect(card.getByText("$850/day")).toBeInTheDocument();
+    expect(card.getByText("Available")).toBeInTheDocument();
+    expect(document.querySelector(".crew-results-head")?.textContent).toBe("1 member");
   });
 
   it("should update search query when typing in search input", async () => {

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequestJson } from "@/lib/queryClient";
+import { apiRequestJson, assetUrl, getAuthToken, parseApiErrorMessage } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConnectionPicker } from "@/components/network-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,8 +12,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, MapPin, Calendar, DollarSign, Users, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, MapPin, Calendar, DollarSign, Users, Trash2, ImagePlus } from "lucide-react";
 import type { Production, ProductionCrew, Profile } from "@shared/schema";
+import { PayoutsCard, ProductionPayments } from "@/components/production-payments";
 
 interface ProductionDetailData {
   production: Production;
@@ -59,6 +61,34 @@ export function ProductionDetail() {
     },
   });
 
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const coverMutation = useMutation({
+    mutationFn: async (file: File | null) => {
+      // FormData upload, so this can't go through apiRequestJson (which sends JSON).
+      const token = getAuthToken();
+      const init: RequestInit = { headers: token ? { Authorization: `Bearer ${token}` } : {} };
+      if (file) {
+        const body = new FormData();
+        body.append("cover", file);
+        Object.assign(init, { method: "POST", body });
+      } else {
+        init.method = "DELETE";
+      }
+      const res = await fetch(assetUrl(`/api/productions/${id}/cover`)!, init);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      return json as Production;
+    },
+    onSuccess: (_data, file) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/productions", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/productions"] });
+      toast({ title: file ? "Cover image updated" : "Cover image removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't update the cover image", description: err.message, variant: "destructive" });
+    },
+  });
+
   const addCrewMutation = useMutation({
     mutationFn: (crewData: Record<string, unknown>) =>
       apiRequestJson<ProductionCrew>("POST", `/api/productions/${id}/crew`, crewData),
@@ -70,8 +100,8 @@ export function ProductionDetail() {
       setCrewRole("");
       setCrewRate("");
     },
-    onError: () => {
-      toast({ title: "Failed to add crew member", variant: "destructive" });
+    onError: (err) => {
+      toast({ title: parseApiErrorMessage(err, "Failed to add crew member"), variant: "destructive" });
     },
   });
 
@@ -97,8 +127,9 @@ export function ProductionDetail() {
       toast({ title: "Handle and role are required", variant: "destructive" });
       return;
     }
-    // Look up profile by handle
-    apiRequestJson<{ profile: Profile }>("GET", `/api/profiles/${crewHandle}`)
+    // Handles are stored without the "@" the placeholder shows, and the lookup is an exact match.
+    const handle = crewHandle.trim().replace(/^@/, "");
+    apiRequestJson<{ profile: Profile }>("GET", `/api/profiles/${encodeURIComponent(handle)}`)
       .then((data) => {
         if (!data?.profile) {
           toast({ title: "Profile not found", variant: "destructive" });
@@ -146,6 +177,52 @@ export function ProductionDetail() {
           <ArrowLeft className="h-3 w-3 mr-1" /> Back to Productions
         </Button>
       </Link>
+
+      {/* Cover image */}
+      <div className="relative overflow-hidden rounded-lg border bg-muted aspect-[21/9]" data-testid="prod-cover">
+        {production.coverUrl ? (
+          <>
+            <img
+              src={assetUrl(production.coverUrl)}
+              alt={`Cover image for ${production.title}`}
+              className="h-full w-full object-cover"
+              data-testid="img-prod-cover"
+            />
+            <div className="absolute bottom-2 right-2 flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => coverInputRef.current?.click()} disabled={coverMutation.isPending} data-testid="button-replace-cover">
+                <ImagePlus className="h-3 w-3 mr-1" /> Replace
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => coverMutation.mutate(null)} disabled={coverMutation.isPending} data-testid="button-remove-cover">
+                <Trash2 className="h-3 w-3 mr-1" /> Remove
+              </Button>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => coverInputRef.current?.click()}
+            disabled={coverMutation.isPending}
+            className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground hover:text-foreground transition-colors border-2 border-dashed border-border rounded-lg"
+            data-testid="button-add-cover"
+          >
+            <ImagePlus className="h-6 w-6" />
+            <span className="text-sm">{coverMutation.isPending ? "Uploading..." : "Add a cover image"}</span>
+            <span className="text-xs">JPEG, PNG or WebP, up to 8 MB</span>
+          </button>
+        )}
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) coverMutation.mutate(file);
+            e.target.value = "";
+          }}
+          data-testid="input-prod-cover"
+        />
+      </div>
 
       {/* Production header */}
       <Card>
@@ -218,10 +295,11 @@ export function ProductionDetail() {
           {/* Add crew form */}
           {showAddCrew && (
             <div className="flex flex-col sm:flex-row gap-2 mb-4 p-3 rounded-lg bg-muted/30">
+              <ConnectionPicker onPick={setCrewHandle} />
               <Input
                 value={crewHandle}
                 onChange={(e) => setCrewHandle(e.target.value)}
-                placeholder="@handle"
+                placeholder="@handle (must be a connection)"
                 className="flex-1"
                 data-testid="input-crew-handle"
               />
@@ -308,6 +386,9 @@ export function ProductionDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PayoutsCard />
+      <ProductionPayments productionId={production.id} crew={crew} />
     </div>
   );
 }
