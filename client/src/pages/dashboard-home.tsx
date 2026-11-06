@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -16,6 +17,7 @@ import { ProductionThumb } from "@/components/production-thumb";
 
 export function DashboardHome() {
   const { user } = useAuth();
+  const [feedScope, setFeedScope] = useState<"all" | "following">("all");
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["/api/profile"],
@@ -143,7 +145,11 @@ export function DashboardHome() {
           </div>
           <div className="space-y-3">
             <FeedComposer />
-            <ActivityFeed />
+            <div className="flex gap-2" role="tablist" aria-label="Feed filter">
+              <Button size="sm" variant={feedScope === "all" ? "default" : "outline"} role="tab" aria-selected={feedScope === "all"} onClick={() => setFeedScope("all")} data-testid="tab-feed-all">Everyone</Button>
+              <Button size="sm" variant={feedScope === "following" ? "default" : "outline"} role="tab" aria-selected={feedScope === "following"} onClick={() => setFeedScope("following")} data-testid="tab-feed-following">Following</Button>
+            </div>
+            <ActivityFeed key={feedScope} following={feedScope === "following"} />
           </div>
         </div>
         <div>

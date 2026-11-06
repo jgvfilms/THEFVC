@@ -28,6 +28,7 @@ import { getHealth } from "./lib/health";
 import { registerInvoiceRoutes } from "./invoice-routes";
 import { registerMcpRoutes } from "./mcp-routes";
 import { registerMessageRoutes } from "./message-routes";
+import { registerNetworkRoutes } from "./network-routes";
 import { registerProductionPaymentRoutes } from "./production-payment-routes";
 import { registerOAuthRoutes } from "./oauth-routes";
 import { pageConfigSchema } from "@shared/page-config";
@@ -145,6 +146,7 @@ export async function registerRoutes(
   registerOAuthRoutes(app);
   registerMcpRoutes(app);
   registerMessageRoutes(app);
+  registerNetworkRoutes(app);
   registerProductionPaymentRoutes(app);
   // PRD-018: Stricter rate limiting on auth endpoints to prevent brute-force.
   // scope: "auth" means exceeding any one of these only blocks these three —

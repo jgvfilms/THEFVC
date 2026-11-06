@@ -1,3 +1,4 @@
+import { NetworkActions } from "@/components/network-actions";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useEffect } from "react";
 import { Link, useParams } from "wouter";
@@ -287,6 +288,7 @@ export function PublicProfile() {
 
             <div className="cta-row">
               <Link href={`/app/messages/${handle}`} className="btn btn-primary" data-testid="link-message-member">Message</Link>
+              <NetworkActions handle={handle} />
             </div>
 
             {(socials.length > 0 || config.customLinks.length > 0 || (profile.reelUrl && !reelEmbeddable) || profile.imdbUrl || profile.websiteUrl) && (

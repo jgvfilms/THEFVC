@@ -286,6 +286,26 @@ const NEW_TABLES = [
     read_at INTEGER,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS follows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    follower_id INTEGER NOT NULL REFERENCES users(id),
+    followee_id INTEGER NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS member_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL REFERENCES users(id),
+    addressee_id INTEGER NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    responded_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS member_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    blocker_id INTEGER NOT NULL REFERENCES users(id),
+    blocked_id INTEGER NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  )`,
   // ===== PRD-007: Payments & Monetization =====
   `CREATE TABLE IF NOT EXISTS subscription_tiers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -402,6 +422,11 @@ const NEW_TABLES = [
 ];
 
 const INDEXES = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_follows_pair ON follows(follower_id, followee_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_connections_pair ON member_connections(requester_id, addressee_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_connections_addressee ON member_connections(addressee_id, status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_blocks_pair ON member_blocks(blocker_id, blocked_id)`,
   "CREATE INDEX IF NOT EXISTS idx_production_payments_production ON production_payments(production_id)",
   "CREATE INDEX IF NOT EXISTS idx_production_payments_payee ON production_payments(payee_user_id)",
   "CREATE INDEX IF NOT EXISTS idx_production_payments_payer ON production_payments(payer_user_id)",

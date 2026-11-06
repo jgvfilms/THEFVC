@@ -732,3 +732,30 @@ export const messages = sqliteTable("messages", {
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
+
+// ===== MEMBER NETWORK (follow / connect / block) =====
+// Follow is one-way and instant. A connection is one row per pair (requester ->
+// addressee) that is 'pending' until the addressee accepts. Blocks are one-way
+// but sever every relationship between the two in both directions.
+export const follows = sqliteTable("follows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  followerId: integer("follower_id").notNull().references(() => users.id),
+  followeeId: integer("followee_id").notNull().references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const memberConnections = sqliteTable("member_connections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  requesterId: integer("requester_id").notNull().references(() => users.id),
+  addresseeId: integer("addressee_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("pending"), // pending | accepted
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  respondedAt: integer("responded_at", { mode: "timestamp" }),
+});
+
+export const memberBlocks = sqliteTable("member_blocks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  blockerId: integer("blocker_id").notNull().references(() => users.id),
+  blockedId: integer("blocked_id").notNull().references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});

@@ -184,14 +184,11 @@ export function FeedComposer() {
   );
 }
 
-export function ActivityFeed({ publicMode = false }: { publicMode?: boolean }) {
-  const queryKey = publicMode ? ["/api/feed/public"] : ["/api/feed"];
+export function ActivityFeed({ publicMode = false, following = false }: { publicMode?: boolean; following?: boolean }) {
+  const path = publicMode ? "/api/feed/public" : following ? "/api/network/feed" : "/api/feed";
   const { data, isLoading } = useQuery({
-    queryKey,
-    queryFn: () => apiRequestJson<{ activities: FeedItem[]; posts: FeedItem[] }>(
-      "GET",
-      publicMode ? "/api/feed/public" : "/api/feed"
-    ),
+    queryKey: [path],
+    queryFn: () => apiRequestJson<{ activities: FeedItem[]; posts: FeedItem[] }>("GET", path),
   });
 
   if (isLoading) {
@@ -234,7 +231,11 @@ export function ActivityFeed({ publicMode = false }: { publicMode?: boolean }) {
     return (
       <Card>
         <CardContent className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">No activity yet. Be the first to post!</p>
+          <p className="text-sm text-muted-foreground" data-testid="text-feed-empty">
+            {following
+              ? "Nothing from the members you follow yet. Follow people from their profile to see their activity here."
+              : "No activity yet. Be the first to post!"}
+          </p>
         </CardContent>
       </Card>
     );

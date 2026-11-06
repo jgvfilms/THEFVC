@@ -12,6 +12,7 @@ import { db, storage } from "./storage";
 import { messages } from "@shared/schema";
 import { requireAuth, type AuthedRequest } from "./middleware/auth";
 import { rateLimit } from "./middleware/rateLimit";
+import { isBlockedEitherWay } from "./network-routes";
 import { queueEmail, newMessageTemplate } from "./email";
 
 export const MAX_MESSAGE_LENGTH = 2000;
@@ -41,6 +42,8 @@ export function registerMessageRoutes(app: Express) {
       return res.status(404).json({ error: "Member not found." });
     }
     if (recipient.id === sender.id) return res.status(400).json({ error: "You can't message yourself." });
+    // A block in either direction looks the same as an unknown member. Existing threads stay readable.
+    if (isBlockedEitherWay(sender.id, recipient.id)) return res.status(404).json({ error: "Member not found." });
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const sentToday = db

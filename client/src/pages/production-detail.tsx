@@ -3,6 +3,7 @@ import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequestJson, assetUrl, getAuthToken } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConnectionPicker } from "@/components/network-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -294,6 +295,7 @@ export function ProductionDetail() {
           {/* Add crew form */}
           {showAddCrew && (
             <div className="flex flex-col sm:flex-row gap-2 mb-4 p-3 rounded-lg bg-muted/30">
+              <ConnectionPicker onPick={setCrewHandle} />
               <Input
                 value={crewHandle}
                 onChange={(e) => setCrewHandle(e.target.value)}

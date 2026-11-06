@@ -168,6 +168,31 @@ Invariants (covered by `tests/api/mcp.test.ts` and `oauth.test.ts`):
 - **Anything with a `user_id` FK must be deleted in the erasure job** if this
   repo ever gains one (FVCfinalBoss has it; foreign keys are on).
 
+## Member network (follow / connect / block)
+
+`server/network-routes.ts`, tables `follows`, `member_connections`,
+`member_blocks`; UI `components/network-actions.tsx`, `pages/network.tsx`
+(`/app/network`), buttons on the public profile, a Following tab on the
+dashboard feed. Covered by `tests/api/network.test.ts`.
+
+- **Follow is one-way and instant**; the "feed" is the existing
+  `activity_feed` + `feed_posts` filtered to followed members
+  (`GET /api/network/feed`). Cards never carry email or other private columns.
+- **Connect is request then accept**, one `member_connections` row per pair
+  (unique index). A counter-request auto-accepts. Only the addressee can
+  accept/decline; either side can disconnect; only the requester can cancel.
+- **Messaging and crew-adding are deliberately NOT gated by Connect**
+  (existing conversations and productions keep working). Connect adds a
+  one-click picker on Add Crew. If hiring is ever gated, gate new behaviour only.
+- **Block** deletes follows and connections both ways in one transaction and
+  makes new messages 404 (existing threads stay readable). Follow, connect and
+  block-affected lookups all answer a single "Member not found" so handles,
+  private profiles and blocks can't be probed.
+- **No follow/connect to yourself or to a private profile** (`profiles.isPublic
+  = false`). Identity is `req.userId`, the other member is a path handle.
+- **Anything with a `user_id` FK** (`follows`, `member_connections`,
+  `member_blocks`) must be deleted in the erasure job if this repo gains one.
+
 ## Style
 
 - Comments explain *why*, not *what*. Prefer one sentence of rationale over a
